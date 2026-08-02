@@ -276,6 +276,18 @@ enum DoctorReport {
         return Bundle.main.executablePath ?? "the yap binary"
     }
 
+    /// Whether the TCC grants this process sees are its own.
+    ///
+    /// True only under launchd, which is not a responsible process, so the
+    /// grant attaches to the executable. From a terminal they belong to the
+    /// terminal app, and `grantee()` cannot reliably name which one: the
+    /// immediate parent is usually the shell, while TCC files the row under
+    /// the terminal that owns the session. Good enough to point someone at a
+    /// list they are already looking at, not good enough to state as fact.
+    static var grantsBelongToThisBinary: Bool {
+        parentProcessName() == "launchd"
+    }
+
     /// The parent's executable name.
     ///
     /// `proc_pidpath` rather than forking `ps -o comm=`: same answer — the

@@ -41,10 +41,23 @@ struct Setup: ParsableCommand {
         print()
         print("✓ all set. Run `yap` to start the daemon.")
 
-        // Everything above answered for this process. If a login agent is
-        // installed, it is a different one, and reporting success without
-        // saying so is how "setup says granted" coexists with "nothing runs".
-        if let agent = DoctorReport.checkLaunchAgent(), case .warn(let detail) = agent.status {
+        // Everything above answered for this process, which is almost never
+        // the process that ends up running yap.
+        switch DoctorReport.checkLaunchAgent() {
+        case .none:
+            // No agent yet, which is every fresh install. Saying nothing here
+            // is how "setup says granted" and "the next command asks for
+            // Accessibility again" ended up looking like a contradiction.
+            print()
+            print("To run yap at login: `yap install --launch-at-login`.")
+            print("launchd starts the binary itself rather than through a terminal, so")
+            print("macOS asks for Accessibility once more, this time filed under yap.")
+            print("That prompt is the grant the daemon actually uses.")
+        case .some(let agent):
+            // Installed but unhealthy. It is a different grant from the one
+            // checked above, and reporting success without saying so is how
+            // "setup says granted" coexists with "nothing runs".
+            guard case .warn(let detail) = agent.status else { break }
             print()
             print("! the login agent is a separate case: \(detail)")
             if let fix = agent.remediation { print("  → \(fix)") }
@@ -72,9 +85,23 @@ struct Setup: ParsableCommand {
         }
     }
 
+    /// Who the tick above actually belongs to.
+    ///
+    /// The paragraph at the top has just said a terminal's grant does not
+    /// carry to the login agent, so a bare "already granted" contradicts it,
+    /// and the agent asking again a minute later reads as a bug rather than as
+    /// the thing we warned about. Deliberately not the terminal's name: the
+    /// parent process is usually the shell, while the row in System Settings
+    /// is filed under the terminal app, and guessing wrong is worse than
+    /// staying general.
+    private static var holder: String {
+        DoctorReport.grantsBelongToThisBinary
+            ? "to yap itself" : "to this terminal, not to yap itself"
+    }
+
     private func waitForAccessibility() throws {
         if AXIsProcessTrusted() {
-            print("✓ accessibility already granted")
+            print("✓ accessibility already granted \(Self.holder)")
             return
         }
 
@@ -92,7 +119,7 @@ struct Setup: ParsableCommand {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         switch status {
         case .authorized:
-            print("✓ microphone already granted")
+            print("✓ microphone already granted \(Self.holder)")
             return
         case .denied, .restricted:
             print("✗ microphone is denied — macOS won't re-prompt once denied.")
