@@ -12,7 +12,7 @@ struct Yap: ParsableCommand {
         // The single source of truth for what this binary is. Nothing else
         // holds a version constant, and the release workflow greps this
         // literal against the tag, so a build can never claim the wrong one.
-        version: "0.1.0",
+        version: "0.1.1",
         subcommands: [
             Run.self, Start.self, Stop.self, Record.self, Models.self, Doctor.self, Setup.self,
             Install.self, Bench.self,
