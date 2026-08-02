@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Microphone, for dictation and for the mic track of a recorded session.
+      System audio capture rides on the same entitlement plus the separate
+      Screen & System Audio Recording TCC grant, which has no entitlement key.
+
+      Note what is deliberately absent: the global hotkey (CGEventTap) and text
+      injection (CGEvent posting) need no entitlement at all under the hardened
+      runtime — only the Accessibility TCC grant, which the user gives once.
+      Signing is what makes that grant stick to yap rather than to whichever
+      terminal happened to launch it.
+    -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

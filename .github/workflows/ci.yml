@@ -1,0 +1,56 @@
+name: ci
+
+# The merge gate. Every pull request builds exactly what a release builds, on
+# the same runner image, so a green tick here means `scripts/build-release.sh`
+# will get as far as codesigning.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build + smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build
+        run: swift build -c release --arch arm64
+
+      # Catches link-time and embedded-plist failures that compiling alone
+      # does not. These subcommands touch neither the mic nor the model, so
+      # they run fine on a headless runner.
+      - name: Smoke
+        run: |
+          BIN=.build/arm64-apple-macosx/release/yap
+          "$BIN" --help
+          "$BIN" models list
+          "$BIN" bench --help
+
+      # The embedded __TEXT,__info_plist is what lets TCC attribute the
+      # microphone and accessibility grants to yap rather than to whatever
+      # launched it. A broken linker flag would silently drop it.
+      - name: Verify embedded Info.plist
+        run: |
+          BIN=.build/arm64-apple-macosx/release/yap
+          otool -s __TEXT __info_plist "$BIN" | grep -q . \
+            || { echo "embedded Info.plist missing from binary" >&2; exit 1; }

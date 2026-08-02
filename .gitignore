@@ -1,0 +1,10 @@
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+
+# kdb auto-rendered task index (regenerate with `kdb render`)
+.tasks/
+
+dist/

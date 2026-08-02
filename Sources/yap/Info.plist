@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.terrifiedbug.yap</string>
+    <key>CFBundleName</key>
+    <string>yap</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>yap listens while you hold the dictation key, and records your microphone during meetings you ask it to capture. Audio never leaves this Mac.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>yap records system audio — the other side of your meetings — so it can be transcribed. Audio never leaves this Mac.</string>
+</dict>
+</plist>
