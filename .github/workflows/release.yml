@@ -12,7 +12,7 @@ name: release
 #   NOTARY_KEY_P8_BASE64         base64 of the App Store Connect API key (.p8)
 #   NOTARY_KEY_ID                App Store Connect key id
 #   NOTARY_ISSUER_ID             App Store Connect issuer id
-#   HOMEBREW_TAP_TOKEN           token that can push to TerrifiedBug/homebrew-tap
+#   HOMEBREW_TAP_DEPLOY_KEY      ssh deploy key with write access to TerrifiedBug/homebrew-tap
 
 on:
   push:
@@ -125,10 +125,17 @@ jobs:
         env:
           VERSION: ${{ steps.v.outputs.version }}
           SHA256: ${{ steps.pkg.outputs.sha256 }}
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/TerrifiedBug/homebrew-tap.git" "$RUNNER_TEMP/tap"
-          cd "$RUNNER_TEMP/tap"
+          # A deploy key rather than a personal token: it can write to this one
+          # repository and nothing else, so the blast radius of the release job
+          # leaking it is one tap.
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/tap_key
+          chmod 600 ~/.ssh/tap_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone "ssh://git@github.com/TerrifiedBug/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          cd "$RUNNER_TEMP/tap" || exit 1
           cat > Casks/yap.rb <<CASKEOF
           cask "yap" do
             version "$VERSION"
