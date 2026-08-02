@@ -156,13 +156,17 @@ jobs:
             # puts the command itself on PATH.
             binary "#{appdir}/yap.app/Contents/MacOS/yap"
 
-            # quit only. Deliberately no "launchctl:" here: Homebrew runs the
-            # uninstall directives on upgrade as well, and that one deletes
-            # ~/Library/LaunchAgents/<label>.plist outright, so every
-            # "brew upgrade" would quietly switch launch-at-login off. The cask
-            # does not create that agent either. "yap install --launch-at-login"
-            # does — so removing it was never the cask's business.
-            uninstall quit: "com.terrifiedbug.yap"
+            # No uninstall stanza at all, and both halves of that are
+            # deliberate. Homebrew runs these directives on upgrade as well as
+            # uninstall: "launchctl" deletes
+            # ~/Library/LaunchAgents/<label>.plist, so every upgrade would
+            # quietly switch launch-at-login off, and "quit" is recorded and
+            # then reopened with "open -b" afterwards, which would start the
+            # daemon outside launchd where neither "yap stop" nor the login
+            # item can reach it.
+            #
+            # Neither is a loss, because the cask never started the daemon.
+            # "yap install --launch-at-login" did, and it owns stopping it.
 
             # zap only runs on "brew uninstall --zap", which is the one time
             # taking the login item away is what was asked for. launchctl
