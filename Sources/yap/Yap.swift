@@ -280,10 +280,14 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 warn("accessibility not granted — yap cannot see the hotkey.")
                 warn(
                     "grant it in System Settings → Privacy & Security → Accessibility, "
-                        + "then start yap again.")
+                        + "then run `yap start`.")
+                // Naming the command matters. This process exits 0 so KeepAlive
+                // leaves it alone, which means ticking the box changes nothing
+                // by itself and the next login would otherwise be the only
+                // thing that brings the agent back.
                 notifyUser(
                     title: "yap needs Accessibility",
-                    body: "Grant it in Privacy & Security, then start yap again."
+                    body: "Grant it in Privacy & Security, then run `yap start`."
                 )
                 throw ExitCode.success
             }

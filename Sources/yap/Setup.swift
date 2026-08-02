@@ -39,7 +39,9 @@ struct Setup: ParsableCommand {
         print()
         try downloadDefaultModel()
         print()
-        print("✓ all set. Run `yap` to start the daemon.")
+        // Not "all set": the checks above covered this terminal, and running
+        // yap from it is the only thing they prove.
+        print("✓ ready. Run `yap` here to start the daemon.")
 
         // Everything above answered for this process, which is almost never
         // the process that ends up running yap.

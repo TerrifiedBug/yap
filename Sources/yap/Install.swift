@@ -99,6 +99,13 @@ struct Install: ParsableCommand {
         print("note: launchd runs the binary directly, not through your terminal,")
         print("so Accessibility and Microphone have to be granted to")
         print("\(binary) itself the first time the agent starts.")
+        print()
+        // The agent exits 0 on a missing grant so KeepAlive does not spin it
+        // forever, which also means nothing brings it back once the grant
+        // exists. Saying "grant it" without saying that leaves people looking
+        // at a ticked box and a daemon that is not running.
+        print("Granting does not start it again by itself. After you tick the box,")
+        print("run `yap start`.")
     }
 
     private func removeAgent() throws {
