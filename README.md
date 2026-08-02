@@ -139,6 +139,19 @@ The binary is 9.1 MB with two dependencies. Sitting there waiting for the key
 it reports 0.0% CPU. Meeting detection is the one thing that ever runs on its
 own, and that is a single device read a second.
 
+## Uninstall
+
+```sh
+yap install --uninstall
+brew uninstall --zap --cask yap
+```
+
+The login item is yap's rather than the cask's, so the first line is what
+takes it away. Skip it and `brew uninstall` on its own leaves launchd trying
+to start a binary that is no longer there. `--zap` also clears the config file
+and the logs. Your recordings are never touched, and neither are the models,
+which are shared with anything else built on FluidAudio.
+
 ## Requirements
 
 macOS 15 or later on Apple Silicon. Transcription needs the Neural Engine, and

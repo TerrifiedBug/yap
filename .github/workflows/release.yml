@@ -159,13 +159,14 @@ jobs:
             # quit only. Deliberately no "launchctl:" here: Homebrew runs the
             # uninstall directives on upgrade as well, and that one deletes
             # ~/Library/LaunchAgents/<label>.plist outright, so every
-            # \`brew upgrade\` would quietly switch launch-at-login off. The cask
-            # does not create that agent either — \`yap install --launch-at-login\`
+            # "brew upgrade" would quietly switch launch-at-login off. The cask
+            # does not create that agent either. "yap install --launch-at-login"
             # does — so removing it was never the cask's business.
             uninstall quit: "com.terrifiedbug.yap"
 
-            # zap only runs on \`brew uninstall --zap\`, which is the one time
-            # taking the login item away is what was asked for.
+            # zap only runs on "brew uninstall --zap", which is the one time
+            # taking the login item away is what was asked for. launchctl
+            # deletes the plist itself, so it is not repeated under trash.
             #
             # Not the models: they live in FluidAudio's machine-global cache,
             # shared with every other FluidAudio client, so removing them here
@@ -173,9 +174,19 @@ jobs:
             zap launchctl: "com.terrifiedbug.yap",
                 trash:     [
                   "~/.config/yap",
-                  "~/Library/LaunchAgents/com.terrifiedbug.yap.plist",
                   "~/Library/Logs/yap",
                 ]
+
+            caveats <<~CAVEAT
+              Finish setting up with:
+                yap setup
+                yap install --launch-at-login
+
+              The login item belongs to yap rather than to this cask, so a
+              plain uninstall leaves it behind. To remove everything:
+                yap install --uninstall
+                brew uninstall --zap --cask yap
+            CAVEAT
           end
           CASKEOF
           git config user.name "github-actions[bot]"
