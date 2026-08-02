@@ -227,11 +227,11 @@ enum DoctorReport {
 
     /// The binary the agent actually launches, read back from its own plist.
     ///
-    /// Not the canonical path: `Install` falls back to the running executable
-    /// when /usr/local/bin/yap is absent, so a dev install runs from the build
-    /// directory. Naming the wrong binary here sends someone to grant
-    /// Accessibility to a file launchd never runs, which fixes nothing and
-    /// looks like the advice was wrong.
+    /// Not a fixed path: `Install` writes whichever binary you ran, so the
+    /// agent points into /Applications/yap.app after a Homebrew install and at
+    /// /usr/local/bin/yap after a manual one. Naming the wrong binary here
+    /// sends someone to grant Accessibility to a file launchd never runs,
+    /// which fixes nothing and looks like the advice was wrong.
     private static func agentBinary() -> String {
         guard
             let data = try? Data(contentsOf: Install.plistURL),

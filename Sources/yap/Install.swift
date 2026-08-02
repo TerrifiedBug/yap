@@ -3,9 +3,13 @@ import Foundation
 
 /// Manage yap's LaunchAgent so the daemon starts at login.
 ///
-/// We deliberately do NOT use SMAppService.mainApp here — that requires a full
-/// .app bundle. Since yap ships as a single binary in /usr/local/bin, a plain
-/// LaunchAgent plist is the simpler, more honest mechanism.
+/// We deliberately do NOT use SMAppService.mainApp here. It registers the
+/// enclosing .app, and yap is a CLI that happens to ship inside one: the
+/// bundle exists so the build can be notarized and so TCC has a stable
+/// identity, not so the app can be launched as an app. A plain LaunchAgent
+/// plist names the executable directly, which is the honest description of
+/// what runs, and it works the same whether yap came from Homebrew, the .dmg
+/// or a local build.
 struct Install: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Install or remove the launch-at-login LaunchAgent."

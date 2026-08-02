@@ -6,9 +6,11 @@ import Foundation
 /// "Quit yap" in the menu bar calls `NSApp.terminate`, which exits 0, and the
 /// agent is `KeepAlive` only on failure — so quitting sticks, and getting back
 /// meant knowing `launchctl kickstart gui/$(id -u)/com.terrifiedbug.yap`. For a
-/// menu-bar app whose Quit item is one click away, that is a poor trade. A
-/// bundle would have offered Spotlight and the Applications folder; a bare
-/// binary in /usr/local/bin offers this instead.
+/// menu-bar app whose Quit item is one click away, that is a poor trade.
+///
+/// yap does ship inside a .app now, so double-clicking it in Applications is
+/// another way back. That only helps someone who found it there; `yap start`
+/// is the answer for a CLI you installed with Homebrew.
 enum Agent {
     /// Whether launchd knows about the job at all.
     static var isLoaded: Bool {
