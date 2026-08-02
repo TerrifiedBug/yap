@@ -108,24 +108,38 @@ struct Install: ParsableCommand {
         }
     }
 
+    /// Which binary launchd should run.
+    ///
+    /// The one you invoked, in almost every case. Preferring
+    /// `/usr/local/bin/yap` instead looks tidy and is wrong: install yap from
+    /// Homebrew on a machine that still has an older copy there, and the agent
+    /// launches the old one for ever. Nothing about that is visible — the new
+    /// binary reports the install succeeded, and the permission advice names a
+    /// file launchd is not going to run.
+    ///
+    /// `Bundle.main.executablePath` is absolute and symlink-resolved, so a
+    /// Homebrew shim resolves to the real binary inside the app bundle, which
+    /// is what TCC keys the grants on.
     private func resolveBinaryPath() throws -> String {
-        // /usr/local/bin/yap is the canonical install path. Honor a real
-        // location if running from elsewhere (e.g. dev).
-        let candidate = "/usr/local/bin/yap"
-        if FileManager.default.isExecutableFile(atPath: candidate) {
-            return candidate
+        let running = Bundle.main.executablePath.flatMap {
+            FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil
         }
-        // Fall back to the running executable. Bundle.main.executablePath is
-        // already absolute and symlink-resolved; argv[0] is whatever the shell
-        // happened to type, so `./.build/.../yap install` would otherwise be
-        // rejected as "couldn't locate the yap binary" while running from it.
-        if let running = Bundle.main.executablePath,
-            FileManager.default.isExecutableFile(atPath: running)
-        {
-            warn("note: /usr/local/bin/yap not found; using \(running)")
+        // The exception: a build directory is rebuilt and replaced constantly,
+        // and every rebuild invalidates the Accessibility grant. Point at the
+        // installed copy instead when there is one.
+        if let running, !running.contains("/.build/") {
             return running
         }
-        warn("couldn't locate the yap binary. install it to /usr/local/bin/yap first.")
+        let installed = "/usr/local/bin/yap"
+        if FileManager.default.isExecutableFile(atPath: installed) {
+            if running != nil { warn("note: running from a build directory; using \(installed)") }
+            return installed
+        }
+        if let running {
+            warn("note: no binary at \(installed); using \(running)")
+            return running
+        }
+        warn("couldn't locate the yap binary. install it to \(installed) first.")
         throw ExitCode(1)
     }
 }
