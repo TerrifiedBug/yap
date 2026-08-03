@@ -1,0 +1,10 @@
+{
+  "name": "yap-website",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./public"
+  },
+  "routes": [
+    { "pattern": "yap.terrifiedbug.com", "custom_domain": true }
+  ]
+}

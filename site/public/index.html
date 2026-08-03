@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>yap — dictation for macOS, on your Mac</title>
+<meta name="description" content="Hold a key, talk, let go. Text at your cursor about 60 ms later. On-device dictation and meeting transcription for Apple Silicon Macs. No account, no upload.">
+<link rel="icon" type="image/png" href="/yap.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
+<meta property="og:title" content="yap — dictation for macOS, on your Mac">
+<meta property="og:description" content="Hold a key, talk, let go. Text at your cursor about 60 ms later. No account, no upload.">
+<meta property="og:image" content="https://yap.terrifiedbug.com/yap.png">
+<meta property="og:url" content="https://yap.terrifiedbug.com">
+<meta property="og:type" content="website">
+<style>
+@font-face{
+  font-family:'Archivo';
+  src:url('/fonts/archivo-var.woff2') format('woff2');
+  font-weight:100 900;
+  font-display:swap;
+}
+:root{
+  --ground:#e8e6e1;      /* warm molded plastic */
+  --ground-hi:#f1efea;   /* raised face */
+  --ground-lo:#dcd9d2;   /* recessed well */
+  --ink:#1c1b18;
+  --ink-soft:#5c5850;
+  --red:#d5382b;         /* the record dot. the only color. */
+  --window:#22201d;      /* counter glass */
+  --window-digit:#f4f2ec;
+  --seam-dark:rgba(28,27,24,.14);
+  --seam-lite:rgba(255,255,255,.65);
+  --radius:12px;
+  --col:1060px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Archivo',system-ui,sans-serif;
+  background:var(--ground);
+  color:var(--ink);
+  font-size:17px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--red);color:#fff}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:3px}
+a:hover{color:var(--red)}
+code,pre,kbd,.mono{font-family:ui-monospace,'SF Mono',SFMono-Regular,Menlo,monospace}
+:focus-visible{outline:2px solid var(--red);outline-offset:3px;border-radius:4px}
+
+/* ---------- machined structure ---------- */
+.seam{border:0;border-top:1px solid var(--seam-dark);box-shadow:0 1px 0 var(--seam-lite)}
+.col{max-width:var(--col);margin:0 auto;padding:0 24px}
+section{padding:96px 0}
+h2{font-size:clamp(1.7rem,3.4vw,2.4rem);font-weight:640;letter-spacing:-.02em;line-height:1.15;margin-bottom:14px}
+.sub{color:var(--ink-soft);max-width:62ch}
+.label{
+  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:#615c52;text-shadow:0 1px 0 var(--seam-lite); /* engraved */
+}
+
+/* ---------- top bar ---------- */
+header{padding:20px 0}
+header .col{display:flex;align-items:baseline;justify-content:space-between}
+.wordmark{font-weight:680;font-size:20px;letter-spacing:-.01em;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+.wordmark:hover{color:inherit}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--red);display:inline-block;flex:none}
+nav{display:flex;gap:26px;font-size:14.5px}
+nav a{text-decoration:none;color:var(--ink-soft)}
+nav a:hover{color:var(--ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:64px 0 72px}
+h1{
+  font-size:clamp(2.9rem,7.2vw,5.9rem);
+  font-weight:660;letter-spacing:-.025em;line-height:1.02;
+  max-width:12ch;
+}
+.hero .sub{margin-top:22px;font-size:clamp(1.05rem,1.6vw,1.25rem);max-width:46ch}
+
+/* the demo: one molded device — keycap, lamp, paper slot */
+.demo{
+  margin-top:44px;max-width:760px;
+  background:var(--ground-hi);border-radius:16px;
+  border:1px solid rgba(28,27,24,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+  padding:26px 28px 22px;
+  display:flex;align-items:flex-start;gap:30px;flex-wrap:wrap;
+  position:relative;
+}
+.demo>.label{position:absolute;bottom:14px;right:20px}
+.keyunit{display:flex;flex-direction:column;align-items:center;gap:12px;flex:none}
+.keycap{
+  width:118px;height:118px;border-radius:16px;cursor:pointer;
+  font-family:inherit;font-size:24px;font-weight:520;color:var(--ink);
+  background:linear-gradient(180deg,var(--ground-hi),#e2dfd8);
+  border:1px solid rgba(28,27,24,.22);
+  box-shadow:0 5px 0 #c9c5bc,0 7px 14px rgba(28,27,24,.16),inset 0 1px 0 rgba(255,255,255,.8);
+  display:flex;align-items:flex-end;justify-content:flex-start;
+  padding:12px 0 8px 14px;
+  transition:transform .06s ease-out,box-shadow .06s ease-out;
+  touch-action:none;-webkit-user-select:none;user-select:none;
+}
+.keycap:active,.keycap.held{
+  transform:translateY(4px);
+  box-shadow:0 1px 0 #c9c5bc,0 2px 5px rgba(28,27,24,.18),inset 0 1px 0 rgba(255,255,255,.6);
+}
+.keystatus{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft)}
+.lamp{
+  width:10px;height:10px;border-radius:50%;background:#b5a9a2;flex:none;
+  box-shadow:inset 0 1px 1px rgba(28,27,24,.3);
+  transition:background .12s,box-shadow .12s;
+}
+.lamp.on{background:var(--red);box-shadow:inset 0 1px 1px rgba(28,27,24,.15)}
+.paper{flex:1;min-width:260px;max-width:520px}
+.paperline{
+  background:var(--ground-lo);
+  border-radius:10px;
+  box-shadow:inset 0 3px 7px rgba(28,27,24,.18),inset 0 -1px 0 rgba(255,255,255,.55);
+  padding:18px 20px;min-height:88px;
+  font-size:17px;line-height:1.5;
+}
+.caret{
+  display:inline-block;width:2px;height:1.15em;background:var(--ink);
+  vertical-align:text-bottom;margin-left:1px;
+  animation:blink 1.1s steps(1) infinite;
+}
+@keyframes blink{50%{opacity:0}}
+.stamp{margin-top:10px;font-size:12.5px;color:var(--ink-soft);min-height:1.4em}
+.stamp .mono{color:var(--ink)}
+.disclaim{margin-top:6px;font-size:12px;color:#615c52}
+
+/* ---------- counters ---------- */
+.counters{padding:64px 0 72px}
+.counterrow{display:grid;grid-template-columns:repeat(4,1fr);gap:22px}
+.counter{text-align:left}
+.window{
+  background:var(--window);border-radius:10px;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.08),0 1px 0 var(--seam-lite);
+  padding:14px 16px;display:flex;align-items:baseline;gap:10px;width:fit-content;min-width:100%;
+}
+.odo{display:flex;color:var(--window-digit);font-weight:560;font-size:clamp(2.1rem,4.4vw,3.4rem);line-height:1;font-variant-numeric:tabular-nums}
+.digit{height:1em;overflow:hidden;padding:0 .05em}
+.digit+.digit{border-left:1px solid rgba(255,255,255,.09)}
+.reel{display:flex;flex-direction:column;transform:translateY(0);transition:transform 1.1s cubic-bezier(.19,1,.22,1)}
+.reel span{height:1em;line-height:1;display:block}
+.digit.sep{color:#8b877e}
+.unit{color:#9c988e;font-size:13px;font-weight:560;letter-spacing:.06em}
+.counter .label{display:block;margin-top:10px}
+.counters .sub{margin-top:34px;font-size:14.5px}
+
+/* ---------- install ---------- */
+.install h2{max-width:20ch}
+.slot{
+  margin-top:30px;display:flex;align-items:center;gap:14px;
+  background:var(--ground-lo);border-radius:var(--radius);
+  box-shadow:inset 0 2px 6px rgba(28,27,24,.16),inset 0 -1px 0 rgba(255,255,255,.5);
+  padding:8px 8px 8px 22px;max-width:640px;flex-wrap:wrap;
+}
+.slot code{font-size:15.5px;flex:1;min-width:230px;padding:10px 0}
+.copybtn{
+  font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.02em;
+  color:var(--ink);cursor:pointer;border-radius:9px;
+  background:linear-gradient(180deg,var(--ground-hi),#e2dfd8);
+  border:1px solid rgba(28,27,24,.22);
+  box-shadow:0 2px 0 #c9c5bc,inset 0 1px 0 rgba(255,255,255,.8);
+  padding:10px 18px;flex:none;
+  transition:transform .06s ease-out,box-shadow .06s ease-out;
+}
+.copybtn:active{transform:translateY(2px);box-shadow:0 0 0 #c9c5bc,inset 0 1px 0 rgba(255,255,255,.6)}
+.install .sub{margin-top:26px}
+.install .fine{margin-top:14px;font-size:14.5px;color:var(--ink-soft);max-width:62ch}
+.slot-hero{margin-top:28px;max-width:540px}
+
+/* ---------- three steps ---------- */
+.steps{
+  display:grid;grid-template-columns:repeat(3,1fr);margin-top:44px;
+  background:var(--ground-hi);border-radius:var(--radius);
+  border:1px solid rgba(28,27,24,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+}
+.step{padding:28px 26px}
+.step+.step{border-left:1px solid var(--seam-dark);box-shadow:inset 1px 0 0 var(--seam-lite)}
+.step h3{font-size:20px;font-weight:640;letter-spacing:-.01em;margin-bottom:8px}
+.step p{font-size:15px;color:var(--ink-soft);line-height:1.55}
+.step kbd{
+  font-size:12px;border:1px solid rgba(28,27,24,.25);border-bottom-width:2px;
+  border-radius:5px;padding:1px 6px;background:var(--ground);
+}
+
+/* ---------- meetings ---------- */
+.grille{
+  height:56px;border-radius:var(--radius) var(--radius) 0 0;
+  background-image:radial-gradient(circle at 3px 3px,rgba(28,27,24,.28) 1.6px,transparent 1.9px);
+  background-size:11px 11px;background-position:center;
+  background-color:var(--ground-lo);
+  box-shadow:inset 0 2px 6px rgba(28,27,24,.12);
+}
+.meetpanel{
+  background:var(--ground-hi);border-radius:var(--radius);
+  border:1px solid rgba(28,27,24,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+  overflow:hidden;margin-top:44px;
+}
+.meetbody{padding:34px 34px 38px;display:grid;grid-template-columns:1.4fr 1fr;gap:36px;align-items:start}
+.meetbody p{color:var(--ink-soft);font-size:15.5px}
+.meetbody p+p{margin-top:12px}
+.meetbody .cmd{
+  background:var(--window);color:var(--window-digit);border-radius:9px;
+  padding:16px 18px;font-size:14px;line-height:1.7;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.5);
+  overflow-x:auto;
+}
+.meetbody .cmd .c{color:#9c988e}
+.meetbody .cmd .t{color:#9c988e}
+.meetbody .cmd b{color:#fff;font-weight:600}
+
+/* ---------- config ---------- */
+.configgrid{display:grid;grid-template-columns:1fr 300px;gap:36px;margin-top:44px;align-items:start}
+pre.json{
+  background:var(--window);color:var(--window-digit);
+  border-radius:var(--radius);padding:24px 26px;font-size:13.5px;line-height:1.75;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.5);
+  overflow-x:auto;
+}
+pre.json .k{color:#b0aca1}
+pre.json .on{color:#fff}
+.switchpanel{
+  background:var(--ground-hi);border-radius:var(--radius);
+  border:1px solid rgba(28,27,24,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+  padding:22px;
+}
+.switchpanel .label{display:block;margin-bottom:16px}
+.switchrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 2px}
+.switchrow+.switchrow{border-top:1px solid var(--seam-dark);box-shadow:0 -1px 0 var(--seam-lite) inset}
+.switchrow .name{font-size:13.5px}
+.toggle{
+  width:46px;height:26px;border-radius:13px;cursor:pointer;flex:none;
+  background:var(--ground-lo);
+  border:1px solid rgba(28,27,24,.22);
+  box-shadow:inset 0 2px 4px rgba(28,27,24,.18);
+  position:relative;transition:background .15s;
+  -webkit-appearance:none;appearance:none;
+}
+.toggle::after{
+  content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+  background:linear-gradient(180deg,#fbfaf7,#e6e3dc);
+  border:1px solid rgba(28,27,24,.2);
+  box-shadow:0 1px 2px rgba(28,27,24,.25);
+  transition:left .15s ease-out;
+}
+.toggle:checked{background:var(--red)}
+.toggle:checked::after{left:22px}
+.switchpanel .fine{margin-top:16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5}
+
+/* ---------- models ---------- */
+.cassettes{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:44px}
+.cassette{
+  background:var(--ground-hi);border-radius:var(--radius);
+  border:1px solid rgba(28,27,24,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+  padding:20px;
+}
+.cassette svg{width:100%;height:auto;display:block;border-radius:8px}
+.cassette .meta{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;gap:8px}
+.cassette .id{font-size:13px;font-weight:620}
+.cassette .size{font-size:12.5px;color:var(--ink-soft)}
+.cassette .langs{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+.cassette .default{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--ink);margin-top:10px}
+.cassette .default .dot{width:7px;height:7px}
+.models .sub{margin-top:30px;font-size:14.5px}
+
+/* ---------- footer ---------- */
+footer{padding:0 0 64px}
+.footplate{
+  margin-top:56px;
+  background:var(--ground-lo);border-radius:var(--radius);
+  box-shadow:inset 0 2px 6px rgba(28,27,24,.12),inset 0 -1px 0 rgba(255,255,255,.5);
+  padding:30px 32px;
+  display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center;
+}
+.footplate .wordmark{font-size:17px}
+.footright{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+footer nav{gap:22px}
+footer .label{letter-spacing:.1em}
+
+/* ---------- responsive ---------- */
+@media (max-width:860px){
+  section{padding:72px 0}
+  .counterrow{grid-template-columns:repeat(2,1fr)}
+  .steps{grid-template-columns:1fr}
+  .meetbody{grid-template-columns:1fr}
+  .configgrid{grid-template-columns:1fr}
+  .cassettes{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+  .step+.step{border-left:0;border-top:1px solid var(--seam-dark);box-shadow:inset 0 1px 0 var(--seam-lite)}
+}
+@media (max-width:480px){
+  .demo{gap:22px;padding:20px 20px 18px}
+  .keycap{width:96px;height:96px}
+  header nav{gap:18px}
+  .footplate{padding:24px 22px}
+  .footright{align-items:flex-start}
+  .demo>.label{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .reel{transition:none}
+  .caret{animation:none}
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: dictation's own ancestor, the pocket dictaphone, reborn as a webpage;
+it refuses the dark-gradient hero + screenshot + feature-card scaffold.
+OWN-WORLD: warm molded-plastic ground, machined seams, engraved small-cap
+labels, tape-counter windows with white digits on near-black, matte pressable
+keys, exactly one color — record-dot red. Archivo for display, the Mac's own
+mono for commands.
+SIGNATURE: hold the fn keycap on the page; the lamp lights, release, and the
+sentence lands 60 ms later — the product's whole loop, simulated honestly.
+PATH: claim → hold-to-try → measured counters → brew install → hold/speak/
+release → meetings grille → config switch panel → model cassettes.
+RISK: object grammar can tip into toy skeuomorphism; held to material and
+typography, never 3D kitsch.
+-->
+
+<header>
+  <div class="col">
+    <a class="wordmark" href="/"><span class="dot" aria-hidden="true"></span>yap</a>
+    <nav>
+      <a href="https://github.com/terrifiedbug/yap">GitHub</a>
+      <a href="https://github.com/terrifiedbug/yap/blob/main/docs/benchmarks.md">Benchmarks</a>
+      <a href="#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="col">
+    <h1>Hold a key, talk, let&nbsp;go.</h1>
+    <p class="sub">The text turns up at your cursor about 60&nbsp;ms later. No account,
+    no upload. Dictation and meeting transcription, all of it on your&nbsp;Mac.</p>
+
+    <div class="slot slot-hero">
+      <code>brew install --cask terrifiedbug/tap/yap</code>
+      <button class="copybtn" aria-label="Copy install command">copy</button>
+    </div>
+
+    <div class="demo">
+      <div class="keyunit">
+        <button class="keycap" id="key" aria-label="Hold to simulate a dictation press">fn</button>
+        <div class="keystatus"><span class="lamp" id="lamp"></span><span id="holdtime" class="mono">hold&nbsp;it</span></div>
+      </div>
+      <div class="paper">
+        <div class="paperline" id="paperline" aria-live="polite"><span id="typed"></span><span class="caret" aria-hidden="true"></span></div>
+        <p class="stamp" id="stamp">Or hold <kbd>F</kbd> on your keyboard.</p>
+        <p class="disclaim">A simulation. The 60&nbsp;ms is real; the microphone never turns&nbsp;on.</p>
+      </div>
+      <span class="label">Dictation</span>
+    </div>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section class="counters" aria-label="Measured numbers">
+  <div class="col">
+    <div class="counterrow">
+      <div class="counter">
+        <div class="window" role="img" aria-label="60 milliseconds"><span class="odo" aria-hidden="true" data-value="060"></span><span class="unit" aria-hidden="true">ms</span></div>
+        <span class="label">Key-up to text</span>
+      </div>
+      <div class="counter">
+        <div class="window" role="img" aria-label="9.1 megabytes"><span class="odo" aria-hidden="true" data-value="9.1"></span><span class="unit" aria-hidden="true">MB</span></div>
+        <span class="label">The whole binary</span>
+      </div>
+      <div class="counter">
+        <div class="window" role="img" aria-label="0.0 percent"><span class="odo" aria-hidden="true" data-value="0.0"></span><span class="unit" aria-hidden="true">%</span></div>
+        <span class="label">CPU while idle</span>
+      </div>
+      <div class="counter">
+        <div class="window" role="img" aria-label="2 dependencies"><span class="odo" aria-hidden="true" data-value="002"></span><span class="unit" aria-hidden="true">deps</span></div>
+        <span class="label">Dependencies</span>
+      </div>
+    </div>
+    <p class="sub">Measured on an M4, p50, and roughly twice as quick as Handy on the same
+    model. Don’t take our word for it: <code>yap bench --audio FILE</code> times it on
+    your own machine, and <a href="https://github.com/terrifiedbug/yap/blob/main/docs/benchmarks.md">the
+    tables</a> come with the commands that made them.</p>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section class="install" id="install">
+  <div class="col">
+    <h2>Two lines, then it’s yours.</h2>
+    <div class="slot">
+      <code>brew install --cask terrifiedbug/tap/yap</code>
+      <button class="copybtn" aria-label="Copy install command">copy</button>
+    </div>
+    <p class="sub"><code>yap setup</code> asks for the permissions and pulls the model down.
+    That is 220&nbsp;MB, once, and then you are offline forever.</p>
+    <p class="fine">Builds are signed with a Developer&nbsp;ID certificate and notarized by
+    Apple, so there is no Gatekeeper prompt. The network gets used exactly once, to fetch
+    the model.</p>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section>
+  <div class="col">
+    <h2>The entire manual.</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Hold</h3>
+        <p>Press and keep <kbd>fn</kbd> down. A small pill shows the mic is live.
+        Some other key, if you’d rather; that is one line in the config.</p>
+      </div>
+      <div class="step">
+        <h3>Speak</h3>
+        <p>Say the thing. Nothing is streaming anywhere; the audio never
+        leaves the machine.</p>
+      </div>
+      <div class="step">
+        <h3>Let go</h3>
+        <p>About 60&nbsp;ms later the words are at your cursor, in whatever
+        app you were already in.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section>
+  <div class="col">
+    <h2>Meetings, both sides of them.</h2>
+    <div class="meetpanel">
+      <div class="grille" aria-hidden="true"></div>
+      <div class="meetbody">
+        <div>
+          <p>The recorder takes your mic and the system audio as two separate tracks and
+          gives you one transcript, with timings and speaker labels. It shares one process
+          and one loaded model with dictation, so nothing extra is resident.</p>
+          <p>Turn on <code>meeting_detection</code> and yap offers to record when something
+          else grabs the mic. Off by default, and nothing is watching until you turn it on.
+          The only thing it ever does on its own is one device read a second.</p>
+        </div>
+        <div class="cmd mono">
+          <span class="c"># transcript.md (invented; the real ones stay on your disk)</span><br>
+          engine: parakeet (parakeet-tdt-ctc-110m)<br><br>
+          <span class="t">[0:04]</span> <b>them:</b> Can everyone see the dashboard?<br>
+          <span class="t">[0:07]</span> <b>me:</b> Yep, sharing works.<br>
+          <span class="t">[0:12]</span> <b>them:</b> Deploy went out at nine. Zero regressions so far.<br>
+          <span class="t">[0:19]</span> <b>me:</b> Latency graph stayed flat all morning.<br>
+          <span class="t">[0:26]</span> <b>them:</b> Good. Ship the changelog and we are done.<br><br>
+          <span class="c"># made with: yap record, ^C to stop</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section>
+  <div class="col">
+    <h2>One config file. Flip it live.</h2>
+    <div class="configgrid">
+      <pre class="json" id="jsonview" aria-label="config.json">{
+  <span class="k">"recordings_dir"</span>: "~/Recordings",
+  <span class="k">"meeting_detection"</span>: <span id="j-meeting_detection">false</span>,
+  <span class="k">"mic_voice_processing"</span>: true,
+  <span class="k">"transcription"</span>: { <span class="k">"enabled"</span>: true },
+  <span class="k">"dictation"</span>: {
+    <span class="k">"model"</span>: "parakeet-tdt-ctc-110m",
+    <span class="k">"hotkey"</span>: "fn",
+    <span class="k">"overlay"</span>: <span id="j-overlay">true</span>,
+    <span class="k">"newline_after_release"</span>: <span id="j-newline_after_release">false</span>,
+    <span class="k">"mute_output"</span>: <span id="j-mute_output">false</span>
+  }
+}</pre>
+      <div class="switchpanel">
+        <span class="label">The interesting switches</span>
+        <div class="switchrow">
+          <span class="name mono">overlay</span>
+          <input type="checkbox" class="toggle" data-key="overlay" checked aria-label="overlay">
+        </div>
+        <div class="switchrow">
+          <span class="name mono">newline_after_release</span>
+          <input type="checkbox" class="toggle" data-key="newline_after_release" aria-label="newline_after_release">
+        </div>
+        <div class="switchrow">
+          <span class="name mono">mute_output</span>
+          <input type="checkbox" class="toggle" data-key="mute_output" aria-label="mute_output">
+        </div>
+        <div class="switchrow">
+          <span class="name mono">meeting_detection</span>
+          <input type="checkbox" class="toggle" data-key="meeting_detection" aria-label="meeting_detection">
+        </div>
+        <p class="fine">Save the file and yap picks it up; these four change on the spot,
+        no restart. <code>~/.config/yap/config.json</code>, every key optional.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="seam">
+
+<section class="models">
+  <div class="col">
+    <h2>Three models, one cache.</h2>
+    <div class="cassettes">
+      <div class="cassette">
+        <svg viewBox="0 0 280 120" role="img" aria-label="Microcassette for parakeet-tdt-ctc-110m">
+          <rect x="1" y="1" width="278" height="118" rx="10" fill="#dcd9d2" stroke="rgba(28,27,24,.2)"/>
+          <rect x="14" y="12" width="252" height="58" rx="6" fill="#f1efea" stroke="rgba(28,27,24,.14)"/>
+          <text x="24" y="36" font-family="ui-monospace,Menlo,monospace" font-size="13" fill="#1c1b18">parakeet-tdt-ctc-110m</text>
+          <text x="24" y="56" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#5c5850">ENGLISH · SIDE A</text>
+          <circle cx="86" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="194" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="86" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <circle cx="194" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <rect x="120" y="86" width="40" height="16" rx="3" fill="none" stroke="rgba(28,27,24,.2)"/>
+        </svg>
+        <div class="meta"><span class="id mono">parakeet-tdt-ctc-110m</span><span class="size">220&nbsp;MB</span></div>
+        <div class="langs">English</div>
+        <span class="default"><span class="dot" aria-hidden="true"></span>loaded by default</span>
+      </div>
+      <div class="cassette">
+        <svg viewBox="0 0 280 120" role="img" aria-label="Microcassette for parakeet-tdt-0.6b-v2">
+          <rect x="1" y="1" width="278" height="118" rx="10" fill="#dcd9d2" stroke="rgba(28,27,24,.2)"/>
+          <rect x="14" y="12" width="252" height="58" rx="6" fill="#f1efea" stroke="rgba(28,27,24,.14)"/>
+          <text x="24" y="36" font-family="ui-monospace,Menlo,monospace" font-size="13" fill="#1c1b18">parakeet-tdt-0.6b-v2</text>
+          <text x="24" y="56" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#5c5850">ENGLISH, ACCURACY · SIDE A</text>
+          <circle cx="86" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="194" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="86" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <circle cx="194" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <rect x="120" y="86" width="40" height="16" rx="3" fill="none" stroke="rgba(28,27,24,.2)"/>
+        </svg>
+        <div class="meta"><span class="id mono">parakeet-tdt-0.6b-v2</span><span class="size">465&nbsp;MB</span></div>
+        <div class="langs">English, when accuracy outranks the download</div>
+      </div>
+      <div class="cassette">
+        <svg viewBox="0 0 280 120" role="img" aria-label="Microcassette for parakeet-tdt-0.6b-v3">
+          <rect x="1" y="1" width="278" height="118" rx="10" fill="#dcd9d2" stroke="rgba(28,27,24,.2)"/>
+          <rect x="14" y="12" width="252" height="58" rx="6" fill="#f1efea" stroke="rgba(28,27,24,.14)"/>
+          <text x="24" y="36" font-family="ui-monospace,Menlo,monospace" font-size="13" fill="#1c1b18">parakeet-tdt-0.6b-v3</text>
+          <text x="24" y="56" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#5c5850">25 LANGUAGES · SIDE A</text>
+          <circle cx="86" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="194" cy="94" r="13" fill="#e8e6e1" stroke="rgba(28,27,24,.3)"/>
+          <circle cx="86" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <circle cx="194" cy="94" r="4" fill="rgba(28,27,24,.35)"/>
+          <rect x="120" y="86" width="40" height="16" rx="3" fill="none" stroke="rgba(28,27,24,.2)"/>
+        </svg>
+        <div class="meta"><span class="id mono">parakeet-tdt-0.6b-v3</span><span class="size">500&nbsp;MB</span></div>
+        <div class="langs">25 languages</div>
+      </div>
+    </div>
+    <p class="sub">They live in the shared FluidAudio cache, so anything else built on it
+    reads the same files; the download happens once per machine, not once per app.
+    Set <code>model</code> in the config to swap.</p>
+  </div>
+</section>
+</main>
+
+<hr class="seam">
+
+<footer>
+  <div class="col">
+    <div class="footplate">
+      <a class="wordmark" href="/"><span class="dot" aria-hidden="true"></span>yap</a>
+      <div class="footright">
+        <nav>
+          <a href="https://github.com/terrifiedbug/yap">GitHub</a>
+          <a href="https://github.com/terrifiedbug/yap/blob/main/docs/benchmarks.md">Benchmarks</a>
+          <a href="https://terrifiedbug.com">terrifiedbug.com</a>
+        </nav>
+        <span class="label">macOS 15+ · Apple Silicon · MIT</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- hold-to-try demo ---- */
+  var key = document.getElementById("key");
+  var lamp = document.getElementById("lamp");
+  var holdtime = document.getElementById("holdtime");
+  var typed = document.getElementById("typed");
+  var stamp = document.getElementById("stamp");
+  var sentences = [
+    "This sentence went from held key to your cursor in sixty milliseconds.",
+    "No account, no upload, no spinner to watch.",
+    "The machine heard you. Nothing else did.",
+    "Faster than autocorrect can change its mind.",
+    "Held, spoken, landed. That is the whole workflow."
+  ];
+  var si = 0, holding = false, t0 = 0, raf = 0, pending = 0;
+
+  function tick(){
+    if(!holding) return;
+    holdtime.textContent = String(Math.round(performance.now() - t0)).padStart(3,"0") + " ms";
+    raf = requestAnimationFrame(tick);
+  }
+  function down(){
+    if(holding) return;
+    holding = true;
+    clearTimeout(pending);
+    t0 = performance.now();
+    key.classList.add("held");
+    lamp.classList.add("on");
+    typed.textContent = "";
+    stamp.innerHTML = "listening&hellip; (not really)";
+    tick();
+  }
+  function up(){
+    if(!holding) return;
+    holding = false;
+    cancelAnimationFrame(raf);
+    var held = Math.round(performance.now() - t0);
+    key.classList.remove("held");
+    lamp.classList.remove("on");
+    holdtime.textContent = "hold it";
+    var s = sentences[si++ % sentences.length];
+    pending = setTimeout(function(){
+      typed.textContent = s;   /* one shot — yap injects the whole string at once */
+      stamp.innerHTML = "held <span class=\"mono\">" + held +
+        " ms</span> &rarr; released &rarr; text landed <span class=\"mono\">60 ms</span> later";
+    }, 60);
+  }
+  key.addEventListener("pointerdown", function(e){ e.preventDefault(); key.setPointerCapture(e.pointerId); down(); });
+  key.addEventListener("pointerup", up);
+  key.addEventListener("pointercancel", up);
+  key.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  key.addEventListener("keydown", function(e){ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); down(); } });
+  key.addEventListener("keyup", function(e){ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); up(); } });
+  /* Assistive tech and programmatic activation arrive as a detail-0 click
+     (real pointer/keyboard paths preventDefault, so they never reach here);
+     run one short simulated press for them. */
+  key.addEventListener("click", function(e){
+    if(e.detail !== 0 || holding) return;
+    down();
+    setTimeout(up, 700);
+  });
+  document.addEventListener("keydown", function(e){
+    if((e.key==="f"||e.key==="F") && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) down();
+  });
+  document.addEventListener("keyup", function(e){ if(e.key==="f"||e.key==="F") up(); });
+  window.addEventListener("blur", up);
+
+  /* ---- odometer counters ---- */
+  var odos = document.querySelectorAll(".odo");
+  odos.forEach(function(o){
+    var v = o.getAttribute("data-value");
+    for(var i=0;i<v.length;i++){
+      var ch = v[i];
+      var d = document.createElement("span");
+      if(ch >= "0" && ch <= "9"){
+        d.className = "digit";
+        var reel = document.createElement("span");
+        reel.className = "reel";
+        for(var n=0;n<=9;n++){
+          var cell = document.createElement("span");
+          cell.textContent = String(n);
+          reel.appendChild(cell);
+        }
+        reel.dataset.target = ch;
+        d.appendChild(reel);
+      }else{
+        d.className = "digit sep";
+        d.textContent = ch;
+      }
+      o.appendChild(d);
+    }
+  });
+  function settle(){
+    document.querySelectorAll(".reel").forEach(function(r,idx){
+      var y = -parseInt(r.dataset.target,10);
+      if(reduced){ r.style.transform = "translateY(" + y + "em)"; return; }
+      setTimeout(function(){ r.style.transform = "translateY(" + y + "em)"; }, idx*70);
+    });
+  }
+  var row = document.querySelector(".counterrow");
+  if("IntersectionObserver" in window && !reduced){
+    var io = new IntersectionObserver(function(entries){
+      if(entries[0].isIntersecting){ settle(); io.disconnect(); }
+    },{threshold:.4});
+    io.observe(row);
+  }else{
+    settle();
+  }
+
+  /* ---- copy ---- */
+  document.querySelectorAll(".copybtn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var code = btn.parentElement.querySelector("code");
+      navigator.clipboard.writeText(code.textContent).then(function(){
+        btn.textContent = "copied";
+        setTimeout(function(){ btn.textContent = "copy"; }, 1400);
+      });
+    });
+  });
+
+  /* ---- config switches drive the JSON ---- */
+  document.querySelectorAll(".toggle").forEach(function(t){
+    t.addEventListener("change", function(){
+      document.getElementById("j-" + t.dataset.key).textContent = t.checked ? "true" : "false";
+    });
+  });
+})();
+</script>
+</body>
+</html>
