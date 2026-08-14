@@ -50,7 +50,8 @@ brings it back sooner.
 
 If you run a menu bar manager — Ice, Thaw, Bartender — and the mark is nowhere
 to be seen, look in its hidden section. Managers that file newly-appeared items
-there catch yap the first time it shows up. Drag it out once; it stays.
+there catch yap the first time it shows up. Reveal that section, then hold
+Command and drag the mark out of it once; it stays where you put it.
 
 | | |
 |---|---|
