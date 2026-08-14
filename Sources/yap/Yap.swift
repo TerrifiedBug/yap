@@ -65,6 +65,10 @@ struct Run: ParsableCommand {
 
     @MainActor
     private func runMain() throws {
+        // Before anything else, because it can replace the process image and
+        // everything below would then run twice. See the function.
+        Self.reexecInsideAppBundle()
+
         // First, before anything this run says can land in them: under
         // launch-at-login these two files are the only record of what
         // happened, and they are also the only thing here that grows without
@@ -138,6 +142,69 @@ struct Run: ParsableCommand {
         // cancelled source with the default disposition already ignored means
         // ^C and launchd stop would both do nothing.
         withExtendedLifetime(sources) { app.run() }
+    }
+
+    /// Re-exec through the real binary inside the .app when we were started
+    /// through a symlink, so LaunchServices has an identity to publish.
+    ///
+    /// Homebrew's `/opt/homebrew/bin/yap` is a symlink into the bundle, and
+    /// CFBundle derives `Bundle.main` from the path we were *exec'd with*, not
+    /// the path that resolves to. Through the shim the main bundle is
+    /// `/opt/homebrew/bin`, which is not a bundle, and LaunchServices then
+    /// registers us with no bundle identifier: `lsappinfo info -only bundleid`
+    /// answers `[ NULL ]` while still reporting
+    /// `LSBundlePath=/Applications/yap.app`.
+    ///
+    /// That splits the menu bar icon in two. Menu bar managers (measured
+    /// against Thaw, the maintained Ice fork) name each item
+    /// `<owner bundle id>:<status item autosave name>`, read through
+    /// `NSRunningApplication`, falling back to the process name when there is
+    /// no identifier — so the daemon is `yap:Item-0` while the same build
+    /// launched from /Applications is `com.terrifiedbug.yap:Item-0`. One app,
+    /// two identities, each with its own remembered section, and the per-app
+    /// tracking those managers key on bundle identifier only ever recognises
+    /// the bundled one. Place the icon under one identity and it arrives
+    /// unplaced under the other, which is how it ends up back in a hidden
+    /// section.
+    ///
+    /// Do not test `Bundle.main.bundleIdentifier` here. This binary carries its
+    /// own `__TEXT,__info_plist` (Package.swift, so TCC can attribute the
+    /// grants), so in-process it answers `com.terrifiedbug.yap` either way —
+    /// measured, after it sent one debugging pass down the wrong road. The
+    /// question LaunchServices actually asks is whether we were exec'd from
+    /// inside a bundle, and the main bundle's path is the answer.
+    ///
+    /// The grants survive: TCC keys them on the code signature and that
+    /// embedded identifier, so the microphone is recorded against
+    /// `com.terrifiedbug.yap` and not against a path, and swapping the daemon
+    /// onto the bundled path kept the event tap working. `execv` keeps the pid,
+    /// so launchd sees one process throughout.
+    private static func reexecInsideAppBundle() {
+        guard !Bundle.main.bundlePath.hasSuffix(".app"),
+            let running = Bundle.main.executablePath
+        else { return }
+
+        // Only worth doing when the far side is genuinely a bundled executable:
+        // a plain `swift build` binary has no identity to recover. `real` is
+        // fully resolved, so it is also what stops this exec'ing in a loop —
+        // the second image resolves to the path it was started with.
+        let real = URL(fileURLWithPath: running).resolvingSymlinksInPath()
+        let contents = real.deletingLastPathComponent().deletingLastPathComponent()
+        guard real.path != running,
+            contents.lastPathComponent == "Contents",
+            FileManager.default.fileExists(
+                atPath: contents.appendingPathComponent("Info.plist").path)
+        else { return }
+
+        // Our own argv, untouched: `Bundle.main` comes from the exec'd path
+        // rather than from `argv[0]`, so there is nothing to rewrite. `ps` will
+        // keep showing the symlink in argv[0] while the image is the bundled
+        // one.
+        execv(real.path, CommandLine.unsafeArgv)
+
+        // Only reachable if the exec failed, which is not fatal: yap runs fine
+        // without an identity, it just cannot hold a place in the menu bar.
+        warn("note: couldn't re-exec via \(real.path): \(String(cString: strerror(errno)))")
     }
 
     /// The startup report, and what to do when it fails.

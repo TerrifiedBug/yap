@@ -128,13 +128,17 @@ struct Install: ParsableCommand {
     /// binary reports the install succeeded, and the permission advice names a
     /// file launchd is not going to run.
     ///
-    /// `Bundle.main.executablePath` is absolute and symlink-resolved, so a
-    /// Homebrew shim resolves to the real binary inside the app bundle, which
-    /// is what TCC keys the grants on.
+    /// `Bundle.main.executablePath` is absolute but *not* symlink-resolved: run
+    /// through Homebrew's shim it reports `/opt/homebrew/bin/yap`, and naming
+    /// that in the plist is what cost the daemon its bundle identity, and with
+    /// it the menu bar icon (see `Run.reexecInsideAppBundle`). So resolve it:
+    /// launchd should exec the bundle's own executable, because that is the
+    /// only way LaunchServices publishes yap's bundle identifier. `Run`
+    /// re-execs itself when this plist is an old one that still names the shim.
     private func resolveBinaryPath() throws -> String {
-        let running = Bundle.main.executablePath.flatMap {
-            FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil
-        }
+        let running = Bundle.main.executablePath
+            .map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+            .flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
         // The exception: a build directory is rebuilt and replaced constantly,
         // and every rebuild invalidates the Accessibility grant. Point at the
         // installed copy instead when there is one.
@@ -144,7 +148,7 @@ struct Install: ParsableCommand {
         let installed = "/usr/local/bin/yap"
         if FileManager.default.isExecutableFile(atPath: installed) {
             if running != nil { warn("note: running from a build directory; using \(installed)") }
-            return installed
+            return URL(fileURLWithPath: installed).resolvingSymlinksInPath().path
         }
         if let running {
             warn("note: no binary at \(installed); using \(running)")
