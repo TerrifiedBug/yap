@@ -48,6 +48,10 @@ the wrong window. yap holds the most recent one in memory and nowhere else.
 "Quit yap" stops the background daemon until your next login. `yap start`
 brings it back sooner.
 
+If you run a menu bar manager — Ice, Thaw, Bartender — and the mark is nowhere
+to be seen, look in its hidden section. Managers that file newly-appeared items
+there catch yap the first time it shows up. Drag it out once; it stays.
+
 | | |
 |---|---|
 | `yap run` | The daemon, in the foreground. The default. |
