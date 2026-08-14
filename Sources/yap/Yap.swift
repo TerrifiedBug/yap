@@ -160,14 +160,13 @@ struct Run: ParsableCommand {
     /// `<owner>:<status item autosave name>`, the owner being the owning
     /// process's bundle identifier when it has one and its process name when it
     /// does not. So the daemon is `yap:Item-0` while the same build launched
-    /// from /Applications is `com.terrifiedbug.yap:Item-0`: one app, two
-    /// identities, each with its own remembered section, and Thaw's relaunch
-    /// tracking, which matches on bundle identifier, recognises only the
-    /// bundled one. Both keys were sitting in its hidden section, and that is
-    /// self-sustaining: with "new items appear in hidden" set, an item it has
-    /// no section for is cmd-dragged there, AppKit persists the drag as our own
-    /// saved position — 430 rewritten to 5518, measured — and we come back
-    /// hidden on the next launch.
+    /// from /Applications is `com.terrifiedbug.yap:Item-0` — one app, two
+    /// identities, each with a section remembered separately. Both keys were
+    /// sitting in its hidden section, and that is self-sustaining: with "new
+    /// items appear in hidden" set, an item it has no section for is
+    /// cmd-dragged there, AppKit persists the drag as our own saved position —
+    /// 430 rewritten to 5518, measured — and we come back hidden on the next
+    /// launch.
     ///
     /// Do not test `Bundle.main.bundleIdentifier` here. This binary carries its
     /// own `__TEXT,__info_plist` (Package.swift, so TCC can attribute the
