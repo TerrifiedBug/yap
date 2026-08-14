@@ -155,17 +155,18 @@ struct Run: ParsableCommand {
     /// answers `[ NULL ]` while still reporting
     /// `LSBundlePath=/Applications/yap.app`.
     ///
-    /// That splits the menu bar icon in two. Menu bar managers (measured
-    /// against Thaw, the maintained Ice fork) name each item
-    /// `<owner bundle id>:<status item autosave name>`, read through
-    /// `NSRunningApplication`, falling back to the process name when there is
-    /// no identifier — so the daemon is `yap:Item-0` while the same build
-    /// launched from /Applications is `com.terrifiedbug.yap:Item-0`. One app,
-    /// two identities, each with its own remembered section, and the per-app
-    /// tracking those managers key on bundle identifier only ever recognises
-    /// the bundled one. Place the icon under one identity and it arrives
-    /// unplaced under the other, which is how it ends up back in a hidden
-    /// section.
+    /// That splits the menu bar icon in two. Thaw — the maintained Ice fork,
+    /// and what this was measured against — names each item
+    /// `<owner>:<status item autosave name>`, the owner being the owning
+    /// process's bundle identifier when it has one and its process name when it
+    /// does not. So the daemon is `yap:Item-0` while the same build launched
+    /// from /Applications is `com.terrifiedbug.yap:Item-0` — one app, two
+    /// identities, each with a section remembered separately. Both keys were
+    /// sitting in its hidden section, and that is self-sustaining: with "new
+    /// items appear in hidden" set, an item it has no section for is
+    /// cmd-dragged there, AppKit persists the drag as our own saved position —
+    /// 430 rewritten to 5518, measured — and we come back hidden on the next
+    /// launch.
     ///
     /// Do not test `Bundle.main.bundleIdentifier` here. This binary carries its
     /// own `__TEXT,__info_plist` (Package.swift, so TCC can attribute the
@@ -202,8 +203,9 @@ struct Run: ParsableCommand {
         // one.
         execv(real.path, CommandLine.unsafeArgv)
 
-        // Only reachable if the exec failed, which is not fatal: yap runs fine
-        // without an identity, it just cannot hold a place in the menu bar.
+        // Only reachable if the exec failed, which is not fatal: yap carries on
+        // under the process-name identity LaunchServices gives it, exactly as it
+        // did before this existed.
         warn("note: couldn't re-exec via \(real.path): \(String(cString: strerror(errno)))")
     }
 
