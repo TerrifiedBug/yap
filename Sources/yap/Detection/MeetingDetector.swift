@@ -43,10 +43,21 @@ final class MeetingDetector {
     private static let quietPollsToEnd = 16
 
     private let ownPID = getpid()
+    /// Test seam for the detector state machine. Production reads Core Audio;
+    /// tests supply the active pid for the requested meeting pid, or any active
+    /// pid when the argument is nil.
+    private let capturePID: ((pid_t?) -> pid_t?)?
     private var timer: Timer?
     /// The client we last saw capturing. Re-checking it is two reads; finding
     /// it in the first place is a scan, so remember it between polls.
     private var capturing: (object: AudioObjectID, pid: pid_t)?
+    /// The client observed on the latest poll, independent of the Core Audio
+    /// object cache above.
+    private var observedPID: pid_t?
+    /// Once the user accepts a prompt, only that capture client can keep the
+    /// recording alive. Recording our mic can wake other input clients of its
+    /// own; they are not evidence that the accepted call continues.
+    private var acceptedPID: pid_t?
     private var consecutiveActive = 0
     private var consecutiveInactive = 0
     /// Capture has been confirmed and not yet declared over. Drives the end
@@ -62,6 +73,10 @@ final class MeetingDetector {
     /// declined, but a different app taking the mic is a different call.
     private var declinedPID: pid_t?
     private var loggedPollFailure = false
+
+    init(capturePID: ((pid_t?) -> pid_t?)? = nil) {
+        self.capturePID = capturePID
+    }
 
     func start() {
         guard timer == nil else { return }
@@ -79,6 +94,8 @@ final class MeetingDetector {
         timer?.invalidate()
         timer = nil
         capturing = nil
+        observedPID = nil
+        acceptedPID = nil
         consecutiveActive = 0
         consecutiveInactive = 0
         inMeeting = false
@@ -89,7 +106,12 @@ final class MeetingDetector {
     /// The user dismissed the prompt for whoever holds the mic right now.
     /// Don't ask again for that process.
     func declineCurrentMeeting() {
-        declinedPID = capturing?.pid
+        declinedPID = observedPID
+    }
+
+    /// The user accepted the prompt for the client seen on the latest poll.
+    func acceptCurrentMeeting() {
+        acceptedPID = observedPID ?? askedPID
     }
 
     /// Ignore the microphone while yap is dictating.
@@ -121,11 +143,13 @@ final class MeetingDetector {
 
     // MARK: -
 
-    private func poll() {
+    func poll() {
         // Suppressed rather than stopped, so an in-progress call keeps its
         // end detection running underneath a dictation press.
         guard !suppressed else { return }
-        guard someoneElseIsCapturing() else {
+        let pid = capturePID?(acceptedPID) ?? currentCapturingPID(preferred: acceptedPID)
+        observedPID = pid
+        guard let pid else {
             consecutiveActive = 0
             // No meeting was ever reported, so there is nothing to end.
             guard inMeeting else { return }
@@ -138,6 +162,7 @@ final class MeetingDetector {
             consecutiveInactive = 0
             inMeeting = false
             declinedPID = nil
+            acceptedPID = nil
             onMeetingEnd?()
             return
         }
@@ -147,12 +172,12 @@ final class MeetingDetector {
         inMeeting = true
         // Ask once per capturing process: not again for one already asked
         // about, and never for one the user turned down.
-        guard let pid = capturing?.pid, pid != askedPID, pid != declinedPID else { return }
+        guard pid != askedPID, pid != declinedPID else { return }
         askedPID = pid
         onMeetingStart?(Self.appName(forPID: pid))
     }
 
-    /// Whether any process except yap is holding an input stream.
+    /// The capturing process to follow, excluding yap itself.
     ///
     /// Three tiers, cheapest first, because this runs every second forever:
     /// ask the devices whether anyone at all is capturing (~0.1 ms, and the
@@ -160,19 +185,24 @@ final class MeetingDetector {
     /// about (~2 ms), and only scan every client when neither settles it.
     /// Interrogating all ~50 audio clients costs ~45 ms — that is the main
     /// thread, so it stays off the common path.
-    private func someoneElseIsCapturing() -> Bool {
+    ///
+    /// Before a prompt is accepted, `preferred` is nil and any external input
+    /// client can start a meeting. Afterwards it is the pid behind that prompt:
+    /// clients opened by yap's own recording cannot prolong the call.
+    private func currentCapturingPID(preferred: pid_t?) -> pid_t? {
         guard anyInputDeviceRunning() else {
             capturing = nil
-            return false
+            return nil
         }
         // Same client as last poll? Confirm the id wasn't recycled onto another
         // process while we weren't looking, and we're done. This can never be
         // one of our own captures: the scan below filters our pid out before
         // assigning `capturing`, so nothing of ours ever reaches this cache.
         if let capturing,
+            preferred == nil || capturing.pid == preferred,
             uint32Property(capturing.object, kAudioProcessPropertyIsRunningInput) == 1,
             pidProperty(capturing.object) == capturing.pid {
-            return true
+            return capturing.pid
         }
         // The gate said someone is capturing but nobody we know of is. Scan.
         for object in processObjects() {
@@ -188,15 +218,16 @@ final class MeetingDetector {
             // the keypress, under its own pid. `suppressed` handles that, and
             // the two are easy to confuse when a prompt appears.
             guard let pid = pidProperty(object), pid != ownPID else { continue }
+            guard preferred == nil || pid == preferred else { continue }
             capturing = (object, pid)
-            return true
+            return pid
         }
         // The gate can sit open for something we don't care about: playback on
         // a duplex device also answers yes. Backing off the scan would cut the
         // cost of that, but every poll it skips is added to how long a real
         // call waits for its prompt, so the scan pays it instead.
         capturing = nil
-        return false
+        return nil
     }
 
     /// Whether any device that can capture is running for anyone.

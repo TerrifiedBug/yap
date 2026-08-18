@@ -630,6 +630,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
             ) { [weak self] in
                 // Recording may have started manually while the prompt was up.
                 guard let self, self.session == nil else { return }
+                detector?.acceptCurrentMeeting()
                 self.startSession(auto: true)
             }
         }

@@ -38,6 +38,10 @@ let package = Package(
                     "-Xlinker", "Sources/yap/Info.plist",
                 ])
             ]
-        )
+        ),
+        .testTarget(
+            name: "yapTests",
+            dependencies: ["yap"]
+        ),
     ]
 )
