@@ -377,6 +377,21 @@ final class Daemon: NSObject, NSApplicationDelegate {
             await coordinator.setStatusHandler { [weak self] busy in
                 Task { @MainActor in self?.show(busy: busy) }
             }
+            await coordinator.setTranscriptReadyHandler { dir in
+                // Fires on the coordinator's executor; hop to the main actor
+                // for AppKit.
+                Task { @MainActor in
+                    showToast(
+                        title: "Transcript ready",
+                        body: dir.lastPathComponent,
+                        button: "Open"
+                    ) {
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [dir.appendingPathComponent("transcript.md")]
+                        )
+                    }
+                }
+            }
             await coordinator.resumePending(root: root)
         }
 
