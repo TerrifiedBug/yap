@@ -20,6 +20,7 @@ actor TranscriptionCoordinator {
     private var transcriber: (any Transcriber)?
     private let ownsTranscriber: Bool
     private var statusHandler: (@Sendable (Bool) -> Void)?
+    private var transcriptReadyHandler: (@Sendable (URL) -> Void)?
     /// Built once. `ISO8601DateFormatter` is expensive to construct and this
     /// one is only ever touched from the actor.
     private let iso = ISO8601DateFormatter()
@@ -39,6 +40,12 @@ actor TranscriptionCoordinator {
     /// a notification and the session's transcribe.log.
     func setStatusHandler(_ handler: @escaping @Sendable (Bool) -> Void) {
         statusHandler = handler
+    }
+
+    /// Called with the session directory after transcript.json/.md are written.
+    /// Unset (the one-shot `yap record` case), a plain notification fires instead.
+    func setTranscriptReadyHandler(_ handler: @escaping @Sendable (URL) -> Void) {
+        transcriptReadyHandler = handler
     }
 
     /// Queue a finished session. With transcription disabled in config, the
@@ -158,7 +165,11 @@ actor TranscriptionCoordinator {
             publish(true)
             do {
                 try await transcribe(dir)
-                notifyUser(title: "yap — transcript ready", body: dir.lastPathComponent)
+                if let transcriptReadyHandler {
+                    transcriptReadyHandler(dir)
+                } else {
+                    notifyUser(title: "yap — transcript ready", body: dir.lastPathComponent)
+                }
                 runHook(for: dir)
             } catch {
                 log(dir, "transcription failed: \(error)")

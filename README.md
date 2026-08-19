@@ -111,12 +111,14 @@ returns silence instead, yap notices inside a second and restarts the mic raw.
 argument.
 
 `transcription` is automatic transcription of recordings, on by default.
-Dictation ignores it, since the hotkey always transcribes. Turn it off to use
-yap as a plain recorder: `on_stop` then fires when the recording stops rather
-than after the transcript. Nothing is lost either way. Turn it back on, restart,
-and yap works through every session under `recordings_dir` that has no
-transcript yet, firing `on_stop` again for each. Anything you put somewhere else
-with `yap record --out` is left alone.
+Dictation ignores it, since the hotkey always transcribes. When one finishes
+while the daemon is running, a banner drops under the menu bar with an Open
+button that reveals the transcript in Finder. Turn it off to use yap as a plain
+recorder: `on_stop` then fires when the recording stops rather than after the
+transcript. Nothing is lost either way. Turn it back on, restart, and yap works
+through every session under `recordings_dir` that has no transcript yet, firing
+`on_stop` again for each. Anything you put somewhere else with
+`yap record --out` is left alone.
 
 ## Models
 

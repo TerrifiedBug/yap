@@ -24,6 +24,19 @@ func retirePrompt() {
     PromptPanel.retireCurrent()
 }
 
+/// One-way announcement in the same pill as the meeting prompt: icon, text,
+/// a single action button, gone by itself in a few seconds. If a prompt is
+/// on screen it falls back to a notification rather than covering it.
+@MainActor
+func showToast(
+    title: String,
+    body: String,
+    button: String,
+    onAccept: @escaping @MainActor () -> Void
+) {
+    PromptPanel.presentToast(title: title, body: body, button: button, onAccept: onAccept)
+}
+
 /// A borderless capsule panel centred under the menu bar, clear of whatever
 /// notch widget lives up there.
 ///
@@ -36,9 +49,15 @@ func retirePrompt() {
 @MainActor
 final class PromptPanel: NSPanel {
     private static var current: PromptPanel?
+    /// Announcements live in the same top-centre spot, but in their own slot:
+    /// a toast must not be mistaken for a prompt by `retireCurrent()`.
+    private static var currentToast: PromptPanel?
     /// Long enough to catch someone settling into a call, short enough that a
     /// missed prompt doesn't linger for the rest of the meeting.
     private static let autoDismissAfter: TimeInterval = 120
+    /// A toast says something already true and needs no answer, so it only has
+    /// to survive long enough to be read.
+    private static let toastDismissAfter: TimeInterval = 6
     /// Clearance below the menu bar. Enough to clear a notch widget hanging
     /// off the menu bar without looking detached from it.
     private static let topGap: CGFloat = 12
@@ -48,6 +67,7 @@ final class PromptPanel: NSPanel {
     private let onAccept: @MainActor () -> Void
     private let onDismiss: @MainActor () -> Void
     private var autoDismiss: Timer?
+    private let dismissAfter: TimeInterval
 
     static func present(
         title: String,
@@ -56,9 +76,12 @@ final class PromptPanel: NSPanel {
         onDismiss: @escaping @MainActor () -> Void,
         onAccept: @escaping @MainActor () -> Void
     ) {
+        // Both live top-centre, so a question evicts an announcement.
+        currentToast?.close()
         current?.close()
         let panel = PromptPanel(
-            heading: title, body: body, button: button, onDismiss: onDismiss, onAccept: onAccept
+            heading: title, body: body, button: button,
+            onDismiss: onDismiss, onAccept: onAccept, toast: false
         )
         current = panel
         panel.appear()
@@ -68,15 +91,39 @@ final class PromptPanel: NSPanel {
         current?.fadeOut()
     }
 
+    static func presentToast(
+        title: String,
+        body: String,
+        button: String,
+        onAccept: @escaping @MainActor () -> Void
+    ) {
+        // A live prompt is a question; never cover it with an announcement.
+        // The announcement still reaches the user, just as a notification.
+        guard current == nil else {
+            notifyUser(title: title, body: body)
+            return
+        }
+        currentToast?.close()
+        let panel = PromptPanel(
+            heading: title, body: body, button: button,
+            onDismiss: {}, onAccept: onAccept, toast: true
+        )
+        currentToast = panel
+        panel.appear()
+        NSSound(named: "Glass")?.play()
+    }
+
     private init(
         heading: String,
         body: String,
         button: String,
         onDismiss: @escaping @MainActor () -> Void,
-        onAccept: @escaping @MainActor () -> Void
+        onAccept: @escaping @MainActor () -> Void,
+        toast: Bool
     ) {
         self.onAccept = onAccept
         self.onDismiss = onDismiss
+        self.dismissAfter = toast ? Self.toastDismissAfter : Self.autoDismissAfter
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -96,7 +143,7 @@ final class PromptPanel: NSPanel {
         isReleasedWhenClosed = false
         animationBehavior = .none
 
-        let content = contentStack(heading: heading, body: body, button: button)
+        let content = contentStack(heading: heading, body: body, button: button, toast: toast)
         let background = PillView()
         background.material = .hudWindow
         background.blendingMode = .behindWindow
@@ -119,7 +166,9 @@ final class PromptPanel: NSPanel {
 
     // MARK: - Layout
 
-    private func contentStack(heading: String, body: String, button: String) -> NSStackView {
+    private func contentStack(
+        heading: String, body: String, button: String, toast: Bool
+    ) -> NSStackView {
         let text = NSStackView(views: [
             Self.label(heading, font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor),
             Self.label(body, font: .systemFont(ofSize: 11), color: .secondaryLabelColor),
@@ -128,13 +177,6 @@ final class PromptPanel: NSPanel {
         text.alignment = .leading
         text.spacing = 1
 
-        let dismiss = CapsuleButton(
-            title: "Dismiss",
-            fill: NSColor.labelColor.withAlphaComponent(0.10),
-            textColor: .labelColor,
-            target: self,
-            action: #selector(dismissClicked)
-        )
         let accept = CapsuleButton(
             title: button,
             fill: .controlAccentColor,
@@ -143,7 +185,22 @@ final class PromptPanel: NSPanel {
             action: #selector(acceptClicked)
         )
 
-        let stack = NSStackView(views: [Self.icon(diameter: 34), text, dismiss, accept])
+        // An announcement has nothing to decline: it is already true, and it
+        // leaves on its own. Only a question gets a Dismiss.
+        var views: [NSView] = [Self.icon(diameter: 34), text]
+        if !toast {
+            views.append(
+                CapsuleButton(
+                    title: "Dismiss",
+                    fill: NSColor.labelColor.withAlphaComponent(0.10),
+                    textColor: .labelColor,
+                    target: self,
+                    action: #selector(dismissClicked)
+                ))
+        }
+        views.append(accept)
+
+        let stack = NSStackView(views: views)
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -225,7 +282,7 @@ final class PromptPanel: NSPanel {
         }
 
         autoDismiss = Timer.scheduledTimer(
-            withTimeInterval: Self.autoDismissAfter,
+            withTimeInterval: dismissAfter,
             repeats: false
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.fadeOut() }
@@ -247,6 +304,7 @@ final class PromptPanel: NSPanel {
         autoDismiss?.invalidate()
         autoDismiss = nil
         if Self.current === self { Self.current = nil }
+        if Self.currentToast === self { Self.currentToast = nil }
         super.close()
     }
 
