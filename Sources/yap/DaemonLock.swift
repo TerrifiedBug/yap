@@ -43,8 +43,18 @@ enum DaemonLock {
     /// the mic gain lease is given back. It exits 0, so `KeepAlive
     /// SuccessfulExit:false` leaves the job down instead of racing us for it.
     ///
-    /// False means someone else still owns the hotkey and this process must
-    /// not run.
+    /// Five seconds later, anything still holding the lock is wedged rather
+    /// than busy — a clean exit is a few file writes — and by then backing out
+    /// is not an option: the SIGTERM has been delivered, so the incumbent dies
+    /// the moment it recovers, and returning false here would leave the
+    /// machine with no daemon at all. So it escalates to SIGKILL, which the
+    /// kernel answers by dropping the lock with the process. If that daemon
+    /// was the login job, launchd sees the abnormal exit and brings it back,
+    /// and the two of us settle it the ordinary way — one of us ends up
+    /// holding the lock, never both.
+    ///
+    /// False means the hotkey could not be taken and this process must not
+    /// run: the only ways out above are a signal the kernel refused.
     static func claim() -> Bool {
         let path = Paths.daemonLock.path
         let handle = open(path, O_CREAT | O_RDWR, 0o600)
@@ -81,7 +91,19 @@ enum DaemonLock {
             usleep(50_000)
             if take(handle) { return true }
         }
-        warn("pid \(holder) did not stop — leaving it the hotkey")
+        warn("pid \(holder) ignored SIGTERM — killing it")
+        if kill(holder, SIGKILL) != 0, errno != ESRCH {
+            warn("could not kill pid \(holder) (\(errnoText())) — leaving it the hotkey")
+            return false
+        }
+        // SIGKILL is not synchronous with the exit, and the lock goes when the
+        // process does, so this waits for the kernel rather than for the
+        // daemon. A second is orders of magnitude more than it takes.
+        for _ in 0..<20 {
+            usleep(50_000)
+            if take(handle) { return true }
+        }
+        warn("pid \(holder) still holds the hotkey after SIGKILL — not starting")
         return false
     }
 
