@@ -48,6 +48,10 @@ the wrong window. yap holds the most recent one in memory and nowhere else.
 "Quit yap" stops the background daemon until your next login. `yap start`
 brings it back sooner.
 
+One daemon holds the hotkey at a time. Start another — from Applications, from
+a terminal, or because an upgrade restarted the login item — and the new one
+takes over and the old one stops, so a press is never captured or typed twice.
+
 If you run a menu bar manager — Ice, Thaw, Bartender — and the mark is nowhere
 to be seen, look in its hidden section. Managers that file newly-appeared items
 there catch yap the first time it shows up. Reveal that section, then hold

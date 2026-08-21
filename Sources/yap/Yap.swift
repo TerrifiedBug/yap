@@ -87,6 +87,12 @@ struct Run: ParsableCommand {
             try checkStartup(root: root, model: chosenModel, hotkey: key)
         }
 
+        // After the flags, the config and the doctor report have all had their
+        // say, so a typo or a missing grant never costs someone the daemon
+        // they already had — and before the model loads, so a takeover never
+        // holds two copies of it in memory at once.
+        guard DaemonLock.claim() else { throw ExitCode.success }
+
         // One model, loaded once, before anything can ask for it. Warming up
         // front is the difference between a 60 ms press and a press that waits
         // out an ANE compile.
