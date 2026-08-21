@@ -11,6 +11,7 @@ import Foundation
 ///       "dictation": {
 ///         "model": "parakeet-tdt-ctc-110m",
 ///         "hotkey": "fn",
+///         "tap_to_toggle": false,
 ///         "overlay": true,
 ///         "newline_after_release": false,
 ///         "mute_output": false
@@ -83,6 +84,14 @@ enum Config {
     static func hotkey() -> String? {
         guard let key = section("dictation")?["hotkey"] as? String, !key.isEmpty else { return nil }
         return key
+    }
+
+    /// Tap the hotkey to start recording and tap again to stop, instead of
+    /// holding it. A press held longer than half a second still behaves like
+    /// push-to-talk — release ends it — so the mode never traps a hold user
+    /// with a latched-open mic. Default off.
+    static func tapToToggle() -> Bool {
+        section("dictation")?["tap_to_toggle"] as? Bool ?? false
     }
 
     /// Show the recording pill at the bottom of the screen. Default on.
@@ -158,6 +167,7 @@ enum Config {
           "dictation": {
             "model": "parakeet-tdt-ctc-110m",
             "hotkey": "fn",
+            "tap_to_toggle": false,
             "overlay": true,
             "newline_after_release": false,
             "mute_output": false
