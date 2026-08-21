@@ -73,7 +73,9 @@ Command and drag the mark out of it once; it stays where you put it.
 ## Configuration
 
 `~/.config/yap/config.json`. Every key is optional and a flag beats the file.
-"Edit config…" in the menu bar opens it, filled in with the defaults.
+"Edit config…" in the menu bar opens it, filled in with the defaults — and an
+upgrade adds a line for anything new, so the file always lists what this yap
+can do. Your own values are never touched.
 
 ```json
 {

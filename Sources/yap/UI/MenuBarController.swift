@@ -231,6 +231,10 @@ final class MenuBarController {
     /// the save on its own.
     @objc private func editConfigClicked() {
         Config.ensureFileExists()
+        // Before it opens, not after: a config written by an earlier yap has
+        // no line for the settings added since, and this is the moment someone
+        // is looking for them.
+        Config.ensureEveryKeyPresent()
         NSWorkspace.shared.open(Config.path)
     }
 
