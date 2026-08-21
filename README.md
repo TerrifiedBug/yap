@@ -81,6 +81,7 @@ Command and drag the mark out of it once; it stays where you put it.
   "dictation": {
     "model": "parakeet-tdt-ctc-110m",
     "hotkey": "fn",
+    "tap_to_toggle": false,
     "overlay": true,
     "newline_after_release": false,
     "mute_output": false
@@ -88,9 +89,10 @@ Command and drag the mark out of it once; it stays where you put it.
 }
 ```
 
-Save it and yap picks it up. The hotkey, the overlay, `mute_output`,
-`newline_after_release` and `meeting_detection` all change on the spot. A new
-`model` or `recordings_dir` wants a restart, and yap says so when it sees one.
+Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
+`mute_output`, `newline_after_release` and `meeting_detection` all change on the
+spot. A new `model` or `recordings_dir` wants a restart, and yap says so when it
+sees one.
 
 `newline_after_release` hits Return once the text is in, which is what you want
 for chat boxes.
@@ -98,6 +100,10 @@ for chat boxes.
 `mute_output` silences the speakers while the key is down. Your mic hears the
 room and the room includes whatever you are playing, so a video behind a press
 gets transcribed along with you. Off by default because you can hear it happen.
+
+`tap_to_toggle` turns the press into a switch: tap the key, talk with your hands
+free, tap again to finish. A press you actually hold still ends when you let go,
+so both habits work and a hold never leaves the mic latched open.
 
 `meeting_detection` offers to record when something else grabs the mic. Off by
 default, and nothing is watching until you turn it on.

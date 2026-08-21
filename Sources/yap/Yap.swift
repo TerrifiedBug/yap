@@ -131,7 +131,8 @@ struct Run: ParsableCommand {
             MainActor.assumeIsolated { NSApp.terminate(nil) }
         }
 
-        var banner = "listening on \(key.rawValue) hold · \(chosenModel.id)"
+        var banner =
+            "listening on \(key.rawValue) \(Config.tapToToggle() ? "tap" : "hold") · \(chosenModel.id)"
         if Config.meetingDetectionEnabled() {
             banner += " · watching for meetings → \(root.path)"
         }
@@ -271,6 +272,23 @@ final class Daemon: NSObject, NSApplicationDelegate {
     /// not look like a press — and stops a session transcript finishing in the
     /// background from clearing the indicator out from under a live press.
     private var dictating = false
+    /// True while the capture engine is live — a press, or a latched tap, in
+    /// flight. Distinct from `dictating`, which stays true through the
+    /// transcription that follows and only guards the indicator.
+    private var recording = false
+    /// When the live press started, for telling a tap from a hold in toggle
+    /// mode.
+    private var pressStartedAt = Date.distantPast
+    /// Whether the live press latches (`tap_to_toggle` read at its key-down).
+    /// Decided once per press, same reasoning as `overlayShown`: a config
+    /// saved mid-press must not change what the release edge means.
+    private var pressLatches = false
+    /// Monotonic press id. finishDictation only cleans up for its own press,
+    /// so a completion racing a newer press cannot tear down that press's
+    /// state.
+    private var pressGeneration = 0
+    /// Longer than this and a toggle-mode press is a hold, not a tap.
+    private static let tapThreshold: TimeInterval = 0.5
     /// Pending lift of the detector's dictation suppression. Held so a new
     /// press can cancel the previous press's timer.
     private var unsuppress: DispatchWorkItem?
@@ -309,7 +327,11 @@ final class Daemon: NSObject, NSApplicationDelegate {
         // config's own toggle is read per press, so it can be flipped while
         // the daemon runs.
         self.overlay = noOverlay ? nil : RecordingOverlay()
-        self.menuBar = MenuBarController(modelID: model.id, hotkeyName: hotkey.rawValue)
+        self.menuBar = MenuBarController(
+            modelID: model.id,
+            hotkeyName: hotkey.rawValue,
+            tapToToggle: Config.tapToToggle()
+        )
         // Opt-in, and it only ever fires for *other* processes: the detector
         // skips its own pid. Dictation therefore no longer prompts you to
         // record yourself, which it did back when the two halves were separate
@@ -422,12 +444,26 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
     private func handle(_ event: HotkeyMonitor.Event) {
         switch event {
-        case .pressed: beginDictation()
-        case .released: endDictation()
+        case .pressed:
+            // Pressed while the mic is live only happens for a latched tap —
+            // hold mode's edges strictly alternate — and it means "stop".
+            // Deliberately not gated on the config: a latch must always be
+            // stoppable, even if the setting was turned off underneath it.
+            if recording { endDictation() } else { beginDictation() }
+        case .released:
+            guard recording else { return }
+            // Hold mode always ends here. Toggle mode ends here too when the
+            // key was held past the threshold — push-to-talk keeps working —
+            // and otherwise the quick tap leaves the recording latched.
+            let wasHeld = Date().timeIntervalSince(pressStartedAt) > Self.tapThreshold
+            if !pressLatches || wasHeld { endDictation() }
         }
     }
 
     private func beginDictation() {
+        // State bookkeeping must not re-run under a second press: capture.start
+        // is idempotent, the generation bump below is not.
+        guard !recording else { return }
         // Decided once per press. The file can be saved mid-press, and a pill
         // that appears halfway through — or a level pump feeding a window
         // nobody can see — is worse than honouring the answer we started on.
@@ -456,29 +492,40 @@ final class Daemon: NSObject, NSApplicationDelegate {
         unsuppress = nil
         detector?.suppressed = true
         dictating = true
+        recording = true
+        pressStartedAt = Date()
+        pressLatches = Config.tapToToggle()
+        pressGeneration += 1
         warn("● dictating")
         if overlayShown { overlay?.show(.recording) }
         menuBar.setDictating(true)
     }
 
     private func endDictation() {
-        guard dictating else { return }
+        guard recording else { return }
+        // Cleared before the mic goes down, so the stopping tap's own release
+        // edge — and any synthetic release from setKey/reenable — is a no-op.
+        recording = false
         let samples = capture.stop()
 
         let seconds = Double(samples.count) / AudioCapture.targetSampleRate
         let rms = computeRMS(samples)
         warn(String(format: "○ captured %.2fs · rms %.3f", seconds, rms))
         guard !samples.isEmpty else {
-            finishDictation()
+            finishDictation(generation: pressGeneration)
             return
         }
 
         if overlayShown { overlay?.show(.transcribing) }
         menuBar.setTranscribing()
+        // Whose press this is. finishDictation refuses to clean up for anyone
+        // else's, so a newer press starting while this one transcribes keeps
+        // its indicator, its overlay and its capture.
+        let generation = pressGeneration
         // Inherits this method's main-actor isolation, so injection and the
         // menu-bar reset need no hop; the await on the transcriber suspends
         // rather than blocks, leaving the main actor free the whole time.
-        Task { [transcriber, newlineFlag, echoTranscripts, weak self] in
+        Task { [transcriber, newlineFlag, echoTranscripts, generation, weak self] in
             // Timed from the moment the key came up, through injection, so the
             // log reports what the user actually waits for rather than just
             // the model. Transcription is nearly all of it, but injection is a
@@ -546,11 +593,16 @@ final class Daemon: NSObject, NSApplicationDelegate {
             } catch {
                 warn("transcription failed: \(error)")
             }
-            self?.finishDictation()
+            self?.finishDictation(generation: generation)
         }
     }
 
-    private func finishDictation() {
+    private func finishDictation(generation: Int) {
+        // A newer press owns the indicator, the overlay and the detector
+        // suppression now. Clearing them here is the race this guards against:
+        // it used to hide the new press's pill and, because `dictating` went
+        // false under it, leave its capture running with no release to stop it.
+        guard generation == pressGeneration else { return }
         dictating = false
         overlay?.hide()
         overlayShown = false
@@ -670,6 +722,9 @@ final class Daemon: NSObject, NSApplicationDelegate {
             monitor.setKey(key)
             menuBar.setHotkeyName(key.rawValue)
         }
+        // Only the idle menu line: the mode itself is read at each key-down, so
+        // a flip takes effect on the next press either way.
+        menuBar.setTapToToggle(Config.tapToToggle())
 
         let wantDetector = Config.meetingDetectionEnabled()
         if wantDetector, detector == nil {

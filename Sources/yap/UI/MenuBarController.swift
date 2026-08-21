@@ -23,6 +23,9 @@ final class MenuBarController {
     /// Name of the push-to-talk key, as the state line spells it. Live: the
     /// config file can change the key while the daemon runs.
     private var hotkeyName: String
+    /// Whether a tap latches the mic rather than a hold holding it. Only the
+    /// idle line's verb depends on it; live the same way the key name is.
+    private var tapToToggle: Bool
 
     private let statusItem: NSStatusItem
     private let stateLabel: NSMenuItem
@@ -49,8 +52,9 @@ final class MenuBarController {
     /// Clicked "Stop recording".
     var onStopRecording: (() -> Void)?
 
-    init(modelID: String, hotkeyName: String) {
+    init(modelID: String, hotkeyName: String, tapToToggle: Bool) {
         self.hotkeyName = hotkeyName
+        self.tapToToggle = tapToToggle
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         let menu = NSMenu()
@@ -59,7 +63,11 @@ final class MenuBarController {
         // the actions. We drive enablement ourselves instead.
         menu.autoenablesItems = false
 
-        stateLabel = NSMenuItem(title: Self.idleTitle(hotkeyName), action: nil, keyEquivalent: "")
+        stateLabel = NSMenuItem(
+            title: Self.idleTitle(hotkeyName, tapToToggle),
+            action: nil,
+            keyEquivalent: ""
+        )
         stateLabel.isEnabled = false
         menu.addItem(stateLabel)
 
@@ -141,6 +149,13 @@ final class MenuBarController {
         refresh()
     }
 
+    /// The config file flipped tap_to_toggle.
+    func setTapToToggle(_ enabled: Bool) {
+        guard enabled != tapToToggle else { return }
+        tapToToggle = enabled
+        refresh()
+    }
+
     /// A dictation press produced text. See `lastTranscript` for why we keep
     /// it and how far that goes.
     func setLastTranscript(_ text: String) {
@@ -186,12 +201,13 @@ final class MenuBarController {
         case .transcribing:
             stateLabel.title = "transcribing…"
         case .idle:
-            stateLabel.title = recordingSince == nil ? Self.idleTitle(hotkeyName) : "● recording"
+            stateLabel.title =
+                recordingSince == nil ? Self.idleTitle(hotkeyName, tapToToggle) : "● recording"
         }
     }
 
-    private static func idleTitle(_ hotkey: String) -> String {
-        "idle · hold \(hotkey) to dictate"
+    private static func idleTitle(_ hotkey: String, _ tapToToggle: Bool) -> String {
+        "idle · \(tapToToggle ? "tap" : "hold") \(hotkey) to dictate"
     }
 
     @objc private func toggleClicked() {
