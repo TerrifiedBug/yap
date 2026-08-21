@@ -23,6 +23,23 @@ enum Paths {
     static var stdoutLog: URL { logDirectory.appendingPathComponent("yap.out.log") }
     static var stderrLog: URL { logDirectory.appendingPathComponent("yap.err.log") }
 
+    /// `~/Library/Application Support/yap/daemon.lock`, the file whose write
+    /// lock means "this process owns the hotkey". See `DaemonLock`.
+    ///
+    /// Not in the log directory, tempting though that is for being created
+    /// already: someone clearing logs would delete the lock from under a live
+    /// daemon, and the next one to start would then see the hotkey as free.
+    static var daemonLock: URL {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/yap", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        return dir.appendingPathComponent("daemon.lock")
+    }
+
     /// launchd creates the log files itself and does not honour a mode, so
     /// tighten them to 0600 after the agent is installed. Existing files are
     /// tightened too, which covers an agent installed by an earlier build.
