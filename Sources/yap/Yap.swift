@@ -427,6 +427,11 @@ final class Daemon: NSObject, NSApplicationDelegate {
         // rather than standing on the directory waiting for one, and so
         // "Edit config…" always has something to show.
         Config.ensureFileExists()
+        // And bring it up to date: an upgrade adds settings, and a config
+        // written by an older yap has no line for any of them. Runs before the
+        // watcher is armed so our own write is not reported as someone editing
+        // the file.
+        Config.ensureEveryKeyPresent()
         configWatcher = ConfigWatcher { [weak self] in self?.reloadConfig() }
     }
 

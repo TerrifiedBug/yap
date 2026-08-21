@@ -158,7 +158,7 @@ enum Config {
     /// nothing about how yap behaves — it exists so "Edit config…" has
     /// something to open and the watcher has something to watch. `on_stop` is
     /// left out deliberately: there is no sensible default hook.
-    private static let template = """
+    static let template = """
         {
           "recordings_dir": "~/Recordings",
           "transcription": { "enabled": true },
