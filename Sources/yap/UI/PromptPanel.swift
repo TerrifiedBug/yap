@@ -32,9 +32,24 @@ func showToast(
     title: String,
     body: String,
     button: String,
+    secondaryButton: String? = nil,
+    onSecondary: (@MainActor () -> Void)? = nil,
     onAccept: @escaping @MainActor () -> Void
 ) {
-    PromptPanel.presentToast(title: title, body: body, button: button, onAccept: onAccept)
+    PromptPanel.presentToast(
+        title: title, body: body, button: button,
+        secondaryButton: secondaryButton, onSecondary: onSecondary, onAccept: onAccept
+    )
+}
+
+/// One-line text question in the same pill. Only Save or Return answers it.
+@MainActor
+func askForName(
+    title: String,
+    prefill: String,
+    onSubmit: @escaping @MainActor (String) -> Void
+) {
+    PromptPanel.presentNameField(title: title, prefill: prefill, onSubmit: onSubmit)
 }
 
 /// A borderless capsule panel centred under the menu bar, clear of whatever
@@ -48,6 +63,8 @@ func showToast(
 /// job, since everyone we prompt is by definition mid-meeting.
 @MainActor
 final class PromptPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+
     private static var current: PromptPanel?
     /// Announcements live in the same top-centre spot, but in their own slot:
     /// a toast must not be mistaken for a prompt by `retireCurrent()`.
@@ -66,6 +83,9 @@ final class PromptPanel: NSPanel {
 
     private let onAccept: @MainActor () -> Void
     private let onDismiss: @MainActor () -> Void
+    private let onSecondary: (@MainActor () -> Void)?
+    private let onNameSubmit: (@MainActor (String) -> Void)?
+    private var nameField: NSTextField?
     private var autoDismiss: Timer?
     private let dismissAfter: TimeInterval
 
@@ -81,10 +101,31 @@ final class PromptPanel: NSPanel {
         current?.close()
         let panel = PromptPanel(
             heading: title, body: body, button: button,
+            secondaryButton: nil, onSecondary: nil,
+            namePrefill: nil, onNameSubmit: nil,
             onDismiss: onDismiss, onAccept: onAccept, toast: false
         )
         current = panel
         panel.appear()
+    }
+
+    static func presentNameField(
+        title: String,
+        prefill: String,
+        onSubmit: @escaping @MainActor (String) -> Void
+    ) {
+        currentToast?.close()
+        current?.close()
+        let panel = PromptPanel(
+            heading: title, body: nil, button: "Save",
+            secondaryButton: nil, onSecondary: nil,
+            namePrefill: prefill, onNameSubmit: onSubmit,
+            onDismiss: {}, onAccept: {}, toast: false
+        )
+        current = panel
+        panel.appear()
+        panel.makeKey()
+        if let field = panel.nameField { panel.makeFirstResponder(field) }
     }
 
     static func retireCurrent() {
@@ -95,6 +136,8 @@ final class PromptPanel: NSPanel {
         title: String,
         body: String,
         button: String,
+        secondaryButton: String?,
+        onSecondary: (@MainActor () -> Void)?,
         onAccept: @escaping @MainActor () -> Void
     ) {
         // A live prompt is a question; never cover it with an announcement.
@@ -106,6 +149,8 @@ final class PromptPanel: NSPanel {
         currentToast?.close()
         let panel = PromptPanel(
             heading: title, body: body, button: button,
+            secondaryButton: secondaryButton, onSecondary: onSecondary,
+            namePrefill: nil, onNameSubmit: nil,
             onDismiss: {}, onAccept: onAccept, toast: true
         )
         currentToast = panel
@@ -115,14 +160,20 @@ final class PromptPanel: NSPanel {
 
     private init(
         heading: String,
-        body: String,
+        body: String?,
         button: String,
+        secondaryButton: String?,
+        onSecondary: (@MainActor () -> Void)?,
+        namePrefill: String?,
+        onNameSubmit: (@MainActor (String) -> Void)?,
         onDismiss: @escaping @MainActor () -> Void,
         onAccept: @escaping @MainActor () -> Void,
         toast: Bool
     ) {
         self.onAccept = onAccept
         self.onDismiss = onDismiss
+        self.onSecondary = onSecondary
+        self.onNameSubmit = onNameSubmit
         self.dismissAfter = toast ? Self.toastDismissAfter : Self.autoDismissAfter
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
@@ -142,8 +193,28 @@ final class PromptPanel: NSPanel {
         // NSWindow defaults to release-on-close, which over-releases under ARC.
         isReleasedWhenClosed = false
         animationBehavior = .none
+        becomesKeyOnlyIfNeeded = true
 
-        let content = contentStack(heading: heading, body: body, button: button, toast: toast)
+        if let namePrefill {
+            let field = NSTextField(string: namePrefill)
+            field.isBezeled = true
+            field.bezelStyle = .roundedBezel
+            field.font = .systemFont(ofSize: 12)
+            field.placeholderString = "Meeting name"
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
+            // Losing first-responder status is not consent to save. In
+            // particular, a non-activating panel can briefly end editing while
+            // it negotiates key status. Return still sends the field's action.
+            field.cell?.sendsActionOnEndEditing = false
+            field.target = self
+            field.action = #selector(saveClicked(_:))
+            nameField = field
+        }
+        let content = contentStack(
+            heading: heading, body: body, button: button,
+            secondaryButton: secondaryButton, toast: toast
+        )
         let background = PillView()
         background.material = .hudWindow
         background.blendingMode = .behindWindow
@@ -167,22 +238,32 @@ final class PromptPanel: NSPanel {
     // MARK: - Layout
 
     private func contentStack(
-        heading: String, body: String, button: String, toast: Bool
+        heading: String,
+        body: String?,
+        button: String,
+        secondaryButton: String?,
+        toast: Bool
     ) -> NSStackView {
-        let text = NSStackView(views: [
-            Self.label(heading, font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor),
-            Self.label(body, font: .systemFont(ofSize: 11), color: .secondaryLabelColor),
-        ])
+        var textViews: [NSView] = [
+            Self.label(heading, font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor)
+        ]
+        if let nameField {
+            textViews.append(nameField)
+        } else if let body {
+            textViews.append(
+                Self.label(body, font: .systemFont(ofSize: 11), color: .secondaryLabelColor))
+        }
+        let text = NSStackView(views: textViews)
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 1
+        text.spacing = 3
 
         let accept = CapsuleButton(
             title: button,
             fill: .controlAccentColor,
             textColor: .white,
             target: self,
-            action: #selector(acceptClicked)
+            action: nameField == nil ? #selector(acceptClicked) : #selector(saveClicked(_:))
         )
 
         // An announcement has nothing to decline: it is already true, and it
@@ -196,6 +277,16 @@ final class PromptPanel: NSPanel {
                     textColor: .labelColor,
                     target: self,
                     action: #selector(dismissClicked)
+                ))
+        }
+        if let secondaryButton {
+            views.append(
+                CapsuleButton(
+                    title: secondaryButton,
+                    fill: NSColor.labelColor.withAlphaComponent(0.10),
+                    textColor: .labelColor,
+                    target: self,
+                    action: #selector(secondaryClicked)
                 ))
         }
         views.append(accept)
@@ -289,14 +380,17 @@ final class PromptPanel: NSPanel {
         }
     }
 
-    private func fadeOut() {
+    private func fadeOut(completion: (@MainActor () -> Void)? = nil) {
         autoDismiss?.invalidate()
         autoDismiss = nil
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
             animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            MainActor.assumeIsolated { self?.close() }
+            MainActor.assumeIsolated {
+                self?.close()
+                completion?()
+            }
         }
     }
 
@@ -318,6 +412,24 @@ final class PromptPanel: NSPanel {
         let accept = onAccept
         fadeOut()
         accept()
+    }
+
+    @objc private func secondaryClicked() {
+        guard let secondary = onSecondary else { return }
+        // Wait until the toast has closed before replacing it with the field.
+        // This also keeps the originating mouse-up away from the Save button.
+        fadeOut {
+            secondary()
+        }
+    }
+
+    @objc private func saveClicked(_ sender: Any?) {
+        guard let field = nameField, let submit = onNameSubmit else { return }
+        let value = field.stringValue
+        // `showToast` only presents while no question occupies the prompt slot.
+        fadeOut {
+            submit(value)
+        }
     }
 
     /// NSScreen.main is the screen holding the active window — the one the

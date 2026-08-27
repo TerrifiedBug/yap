@@ -354,7 +354,11 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
     func start() throws {
         menuBar.onStartRecording = { [weak self] in self?.startSession() }
-        menuBar.onStopRecording = { [weak self] in self?.stopSession() }
+        menuBar.onStopRecording = { [weak self] in
+            guard let self else { return }
+            if self.autoStarted { self.detector?.declineCurrentMeeting() }
+            self.stopSession()
+        }
         menuBar.setIdle()
 
         do {
@@ -412,7 +416,9 @@ final class Daemon: NSObject, NSApplicationDelegate {
                     showToast(
                         title: "Transcript ready",
                         body: dir.lastPathComponent,
-                        button: "Open"
+                        button: "Open",
+                        secondaryButton: "Name…",
+                        onSecondary: { [weak self] in self?.promptForName(of: dir) }
                     ) {
                         NSWorkspace.shared.activateFileViewerSelecting(
                             [dir.appendingPathComponent("transcript.md")]
@@ -645,10 +651,11 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
     // MARK: - sessions
 
-    private func startSession(auto: Bool = false) {
+    private func startSession(auto: Bool = false, title: String? = nil) {
         guard session == nil else { return }
         do {
             let newSession = try RecordingSession(root: root)
+            newSession.title = title
             try newSession.start()
             session = newSession
             autoStarted = auto
@@ -682,6 +689,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
         // No-op when the detector is already running, and nil when detection
         // is off entirely.
         detector?.start()
+        detector?.releaseAcceptedMeeting()
         menuBar.setRecording(false, since: nil)
 
         let dir = session.dir
@@ -692,24 +700,49 @@ final class Daemon: NSObject, NSApplicationDelegate {
     /// call: a manual session holds the mic, and detection must stay down
     /// until it ends.
     private func wire(_ detector: MeetingDetector) {
-        detector.onMeetingStart = { [weak self, weak detector] appName in
+        detector.onMeetingStart = { [weak self, weak detector] pid, appName in
+            guard let self else { return }
+            let title = MeetingTitle.capture(forCapturePID: pid)
             let who = appName ?? "Your microphone"
-            warn("◆ \(who) is in use")
-            // Already recording: nothing to offer.
-            guard let self, self.session == nil else { return }
+            warn("◆ \(who) is in use" + (title.map { " · \($0)" } ?? ""))
+            if let session = self.session {
+                // A quiet gap followed by the same capture pid can be a device
+                // swap or a back-to-back call. Only a vanished meeting window
+                // is evidence that the accepted call ended.
+                guard self.autoStarted,
+                      let oldTitle = session.title,
+                      !MeetingTitle.windowExists(oldTitle, forCapturePID: pid)
+                else { return }
+                warn("◇ \(oldTitle) ended — a different call started")
+                self.stopSession()
+            }
+
+            // Standing consent is read at each event so config saves take
+            // effect without a restart. Recording is always announced.
+            if Config.meetingAutoRecord() {
+                self.startSession(auto: true, title: title)
+                guard self.session != nil else { return }
+                detector?.acceptCurrentMeeting()
+                showToast(
+                    title: appName.map { "Recording \($0) call" } ?? "Recording meeting",
+                    body: title ?? "Stop from the menu bar or here",
+                    button: "Stop"
+                ) { [weak self, weak detector] in
+                    detector?.declineCurrentMeeting()
+                    self?.stopSession()
+                }
+                return
+            }
+
             askUser(
                 title: appName.map { "\($0) is in a call" } ?? "Your microphone is in use",
-                body: "Record this meeting?",
+                body: title ?? "Record this meeting?",
                 button: "Record",
-                // "No" holds for this call. A quiet poll clears the detector's
-                // own record of having asked, so without this a brief mic
-                // dropout would ask again after you declined.
                 onDismiss: { detector?.declineCurrentMeeting() }
             ) { [weak self] in
-                // Recording may have started manually while the prompt was up.
                 guard let self, self.session == nil else { return }
                 detector?.acceptCurrentMeeting()
-                self.startSession(auto: true)
+                self.startSession(auto: true, title: title)
             }
         }
         // An unanswered prompt outlives the call it asked about (it sits for
@@ -720,6 +753,22 @@ final class Daemon: NSObject, NSApplicationDelegate {
             guard let self, self.session != nil, self.autoStarted else { return }
             warn("◇ call ended")
             self.stopSession()
+        }
+    }
+
+    /// The transcript toast's Name action: update metadata, heading and folder.
+    private func promptForName(of dir: URL) {
+        let existing = (try? JSONSerialization.jsonObject(
+            with: Data(contentsOf: dir.appendingPathComponent("meta.json"))))
+            .flatMap { ($0 as? [String: Any])?["title"] as? String }
+        askForName(title: "Name this meeting", prefill: existing ?? "") { name in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            let newDir = RecordingSession.applyTitle(trimmed, to: dir)
+            showToast(title: "Saved", body: newDir.lastPathComponent, button: "Open") {
+                NSWorkspace.shared.activateFileViewerSelecting(
+                    [newDir.appendingPathComponent("transcript.md")])
+            }
         }
     }
 

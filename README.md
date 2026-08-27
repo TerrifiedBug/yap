@@ -81,6 +81,7 @@ can do. Your own values are never touched.
 {
   "recordings_dir": "~/Recordings",
   "meeting_detection": false,
+  "meeting_auto_record": false,
   "mic_voice_processing": true,
   "on_stop": "my-hook",
   "transcription": { "enabled": true },
@@ -96,8 +97,8 @@ can do. Your own values are never touched.
 ```
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
-`mute_output`, `newline_after_release` and `meeting_detection` all change on the
-spot. A new `model` or `recordings_dir` wants a restart, and yap says so when it
+`mute_output`, `newline_after_release`, `meeting_detection` and
+`meeting_auto_record` all change on the spot. A new `model` or `recordings_dir` wants a restart, and yap says so when it
 sees one.
 
 `newline_after_release` hits Return once the text is in, which is what you want
@@ -112,7 +113,13 @@ free, tap again to finish. A press you actually hold still ends when you let go,
 so both habits work and a hold never leaves the mic latched open.
 
 `meeting_detection` offers to record when something else grabs the mic. Off by
-default, and nothing is watching until you turn it on.
+default, and nothing is watching until you turn it on. When the meeting app
+exposes a window title, yap uses it in the prompt, recording folder and
+transcript.
+
+`meeting_auto_record` skips that prompt and starts recording immediately, with a
+visible Stop action. It only has an effect when `meeting_detection` is on, and is
+off by default.
 
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
 call coming out of your speakers goes back into the mic. Without it, the other
@@ -124,8 +131,9 @@ argument.
 
 `transcription` is automatic transcription of recordings, on by default.
 Dictation ignores it, since the hotkey always transcribes. When one finishes
-while the daemon is running, a banner drops under the menu bar with an Open
-button that reveals the transcript in Finder. Turn it off to use yap as a plain
+while the daemon is running, a banner drops under the menu bar with Open and
+Name… buttons. Open reveals the transcript in Finder; Name… renames the folder
+and updates its metadata and heading. Turn it off to use yap as a plain
 recorder: `on_stop` then fires when the recording stops rather than after the
 transcript. Nothing is lost either way. Turn it back on, restart, and yap works
 through every session under `recordings_dir` that has no transcript yet, firing

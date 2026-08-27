@@ -15,10 +15,9 @@ import Foundation
 /// device read.
 @MainActor
 final class MeetingDetector {
-    /// Something took the mic. The argument is a display name ("Microsoft
-    /// Teams") when the capturing process belongs to an app, nil for the
-    /// daemons and XPC helpers that have no app to name.
-    var onMeetingStart: ((String?) -> Void)?
+    /// Something took the mic. The arguments are its capture pid and a display
+    /// name ("Microsoft Teams") when that pid belongs to an app.
+    var onMeetingStart: ((pid_t, String?) -> Void)?
 
     /// The mic went quiet a moment ago (~2 s). The call could still come back
     /// from a device switch, so this is only for things that are cheap to
@@ -114,6 +113,13 @@ final class MeetingDetector {
         acceptedPID = observedPID ?? askedPID
     }
 
+    /// The session bound to the accepted prompt has stopped. The preferred-pid
+    /// filter exists to keep clients woken by our own recording from prolonging
+    /// the call; with no recording live it only blinds the scan to other apps.
+    func releaseAcceptedMeeting() {
+        acceptedPID = nil
+    }
+
     /// Ignore the microphone while yap is dictating.
     ///
     /// Filtering our own pid is not enough, because the process on the mic
@@ -147,7 +153,8 @@ final class MeetingDetector {
         // Suppressed rather than stopped, so an in-progress call keeps its
         // end detection running underneath a dictation press.
         guard !suppressed else { return }
-        let pid = capturePID?(acceptedPID) ?? currentCapturingPID(preferred: acceptedPID)
+        let pid = capturePID.map { $0(acceptedPID) }
+            ?? currentCapturingPID(preferred: acceptedPID)
         observedPID = pid
         guard let pid else {
             consecutiveActive = 0
@@ -174,7 +181,7 @@ final class MeetingDetector {
         // about, and never for one the user turned down.
         guard pid != askedPID, pid != declinedPID else { return }
         askedPID = pid
-        onMeetingStart?(Self.appName(forPID: pid))
+        onMeetingStart?(pid, Self.appName(forPID: pid))
     }
 
     /// The capturing process to follow, excluding yap itself.
@@ -262,18 +269,7 @@ final class MeetingDetector {
     /// the one a human would recognise. Daemons and XPC services have no `.app`
     /// and get no name.
     private static func appName(forPID pid: pid_t) -> String? {
-        var buffer = [UInt8](repeating: 0, count: 4 * Int(PATH_MAX))
-        let length = buffer.withUnsafeMutableBytes {
-            proc_pidpath(pid, $0.baseAddress, UInt32($0.count))
-        }
-        guard length > 0 else { return nil }
-
-        let components = (String(decoding: buffer[..<Int(length)], as: UTF8.self) as NSString)
-            .pathComponents
-        guard let end = components.firstIndex(where: { $0.hasSuffix(".app") }) else { return nil }
-        return FileManager.default.displayName(
-            atPath: NSString.path(withComponents: Array(components[...end]))
-        )
+        MeetingTitle.appBundlePath(forPID: pid).map(FileManager.default.displayName(atPath:))
     }
 
     // MARK: - Core Audio plumbing

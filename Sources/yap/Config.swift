@@ -7,6 +7,7 @@ import Foundation
 ///       "transcription": { "enabled": true },
 ///       "mic_voice_processing": true,
 ///       "meeting_detection": false,
+///       "meeting_auto_record": false,
 ///       "on_stop": "my-hook",
 ///       "dictation": {
 ///         "model": "parakeet-tdt-ctc-110m",
@@ -58,6 +59,12 @@ enum Config {
     /// own speech daemon, which does, under a pid of its own.
     static func meetingDetectionEnabled() -> Bool {
         load()?["meeting_detection"] as? Bool ?? false
+    }
+
+    /// Record detected meetings without asking. Only meaningful with meeting
+    /// detection enabled. Default off and read at each detection event.
+    static func meetingAutoRecord() -> Bool {
+        load()?["meeting_auto_record"] as? Bool ?? false
     }
 
     /// Apple voice processing (acoustic echo cancellation) on the mic, so
@@ -164,6 +171,7 @@ enum Config {
           "transcription": { "enabled": true },
           "mic_voice_processing": true,
           "meeting_detection": false,
+          "meeting_auto_record": false,
           "dictation": {
             "model": "parakeet-tdt-ctc-110m",
             "hotkey": "fn",
