@@ -6,8 +6,9 @@ import Foundation
 /// audio than on a mixdown of two people talking over each other, and two
 /// tracks give free two-party diarization.
 final class RecordingSession {
-    let dir: URL
+    private(set) var dir: URL
     let startedAt = Date()
+    var title: String?
 
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
@@ -126,6 +127,56 @@ final class RecordingSession {
             options: [.prettyPrinted, .sortedKeys]
         ) {
             try? data.write(to: dir.appendingPathComponent("meta.json"))
+        }
+        if let title { dir = Self.applyTitle(title, to: dir) }
+    }
+
+    /// Stamp a human title onto a finished session and return its final URL.
+    static func applyTitle(_ title: String, to dir: URL) -> URL {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = MeetingTitle.sanitized(trimmed)
+        guard !clean.isEmpty else { return dir }
+
+        let metaURL = dir.appendingPathComponent("meta.json")
+        var previousTitle: String?
+        if let data = try? Data(contentsOf: metaURL),
+           var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            previousTitle = meta["title"] as? String
+            meta["title"] = trimmed
+            if let updated = try? JSONSerialization.data(
+                withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]
+            ) {
+                try? updated.write(to: metaURL, options: .atomic)
+            }
+        }
+
+        var base = dir.lastPathComponent
+        if let previousTitle {
+            let suffix = "-" + MeetingTitle.sanitized(previousTitle)
+            if base.hasSuffix(suffix) { base.removeLast(suffix.count) }
+        }
+        let parent = dir.deletingLastPathComponent()
+        let newName = base + "-" + clean
+        var destination = parent.appendingPathComponent(newName, isDirectory: true)
+        var n = 2
+        while destination != dir && FileManager.default.fileExists(atPath: destination.path) {
+            destination = parent.appendingPathComponent("\(newName)-\(n)", isDirectory: true)
+            n += 1
+        }
+
+        let transcriptURL = dir.appendingPathComponent("transcript.md")
+        if var transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+           let lineEnd = transcript.firstIndex(of: "\n"),
+           transcript.hasPrefix("# ") {
+            transcript.replaceSubrange(transcript.startIndex..<lineEnd, with: "# \(destination.lastPathComponent)")
+            try? transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+        }
+        guard destination != dir else { return dir }
+        do {
+            try FileManager.default.moveItem(at: dir, to: destination)
+            return destination
+        } catch {
+            return dir
         }
     }
 }
