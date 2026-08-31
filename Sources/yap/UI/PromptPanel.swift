@@ -1,19 +1,24 @@
 import AppKit
 
 /// Ask the user something with a floating banner. `onAccept` runs if they click
-/// `button`, `onDismiss` if they actively turn it down. Ignoring the prompt, or
-/// having it retired, runs neither: only a click is an answer. Any prompt
-/// already on screen is replaced.
+/// `button`, `onDismiss` if they actively turn it down, `onSecondary` if they
+/// click the optional third button. Ignoring the prompt, or having it retired,
+/// runs none of them: only a click is an answer. Any prompt already on screen
+/// is replaced.
 @MainActor
 func askUser(
     title: String,
     body: String,
     button: String,
+    secondaryButton: String? = nil,
+    onSecondary: (@MainActor () -> Void)? = nil,
     onDismiss: @escaping @MainActor () -> Void = {},
     onAccept: @escaping @MainActor () -> Void
 ) {
     PromptPanel.present(
-        title: title, body: body, button: button, onDismiss: onDismiss, onAccept: onAccept
+        title: title, body: body, button: button,
+        secondaryButton: secondaryButton, onSecondary: onSecondary,
+        onDismiss: onDismiss, onAccept: onAccept
     )
 }
 
@@ -93,6 +98,8 @@ final class PromptPanel: NSPanel {
         title: String,
         body: String,
         button: String,
+        secondaryButton: String?,
+        onSecondary: (@MainActor () -> Void)?,
         onDismiss: @escaping @MainActor () -> Void,
         onAccept: @escaping @MainActor () -> Void
     ) {
@@ -101,7 +108,7 @@ final class PromptPanel: NSPanel {
         current?.close()
         let panel = PromptPanel(
             heading: title, body: body, button: button,
-            secondaryButton: nil, onSecondary: nil,
+            secondaryButton: secondaryButton, onSecondary: onSecondary,
             namePrefill: nil, onNameSubmit: nil,
             onDismiss: onDismiss, onAccept: onAccept, toast: false
         )

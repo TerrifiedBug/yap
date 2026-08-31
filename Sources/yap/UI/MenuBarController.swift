@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Status bar item in the top-right of the menu bar. Shows what yap is doing
 /// at a glance and provides the only persistent control surface (we run as
@@ -28,9 +29,17 @@ final class MenuBarController {
     private var tapToToggle: Bool
 
     private let statusItem: NSStatusItem
-    private let stateLabel: NSMenuItem
     private let toggleItem: NSMenuItem
     private let copyItem: NSMenuItem
+    /// Backs the header card. `refresh()` stays the single point of truth and
+    /// pushes finished strings into it; SwiftUI does the redraw, so nothing
+    /// here reaches into the view.
+    private let state = MenuState()
+
+    /// Fixed, so the menu keeps one width as the state line changes length.
+    /// Wide enough for the longest of them ("idle · hold rightCommand to
+    /// dictate") and for a model id.
+    private static let headerWidth: CGFloat = 260
 
     /// The last thing dictation produced. In process memory, one at a time,
     /// never written to disk or log by this feature — the log deliberately
@@ -59,44 +68,43 @@ final class MenuBarController {
 
         let menu = NSMenu()
         // Without this AppKit greys out every item whose target doesn't answer
-        // a validation selector, which would disable the two status lines *and*
-        // the actions. We drive enablement ourselves instead.
+        // a validation selector, which would disable the header *and* the
+        // actions. We drive enablement ourselves instead.
         menu.autoenablesItems = false
 
-        stateLabel = NSMenuItem(
-            title: Self.idleTitle(hotkeyName, tapToToggle),
-            action: nil,
-            keyEquivalent: ""
-        )
-        stateLabel.isEnabled = false
-        menu.addItem(stateLabel)
+        state.line = Self.idleTitle(hotkeyName, tapToToggle)
 
-        // Never changes: the model is chosen once, at launch.
-        let modelLabel = NSMenuItem(title: "model: \(modelID)", action: nil, keyEquivalent: "")
-        modelLabel.isEnabled = false
-        menu.addItem(modelLabel)
+        // A hosting view inside a menu item, not a run of disabled text lines:
+        // the mark, the state and the model read as one card. Fixed width so
+        // the menu never resizes as the state line changes length; the height
+        // comes from what SwiftUI lays out.
+        let header = NSMenuItem()
+        let hosting = NSHostingView(rootView: MenuHeaderView(state: state, modelID: modelID))
+        hosting.frame.size = NSSize(
+            width: Self.headerWidth,
+            height: hosting.fittingSize.height
+        )
+        header.view = hosting
+        header.isEnabled = false
+        menu.addItem(header)
 
         menu.addItem(.separator())
 
         toggleItem = NSMenuItem(
-            title: "Start recording",
+            title: "Start Recording",
             action: #selector(toggleClicked),
             keyEquivalent: "r"
         )
+        toggleItem.image = NSImage(
+            systemSymbolName: "record.circle", accessibilityDescription: nil)
         menu.addItem(toggleItem)
 
-        let editConfig = NSMenuItem(
-            title: "Edit config…",
-            action: #selector(editConfigClicked),
-            keyEquivalent: ","
-        )
-        menu.addItem(editConfig)
-
         copyItem = NSMenuItem(
-            title: "Copy last transcript",
+            title: "Copy Last Transcript",
             action: #selector(copyTranscriptClicked),
             keyEquivalent: ""
         )
+        copyItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
         // Nothing to copy until something has been dictated. That is the
         // whole of the empty state.
         copyItem.isEnabled = false
@@ -104,6 +112,17 @@ final class MenuBarController {
 
         menu.addItem(.separator())
 
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(settingsClicked),
+            keyEquivalent: ","
+        )
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        menu.addItem(settings)
+
+        menu.addItem(.separator())
+
+        // No symbol: the system's own Quit items don't carry one.
         let quit = NSMenuItem(
             title: "Quit yap",
             action: #selector(quitClicked),
@@ -111,7 +130,7 @@ final class MenuBarController {
         )
         menu.addItem(quit)
 
-        for item in [toggleItem, editConfig, copyItem, quit] {
+        for item in [toggleItem, copyItem, settings, quit] {
             item.target = self
         }
 
@@ -185,24 +204,32 @@ final class MenuBarController {
         refresh()
     }
 
-    /// Single point of truth for both titles. Called on every state change and
-    /// once a second while a session records.
+    /// Single point of truth for the toggle title and the header's state line.
+    /// Called on every state change and once a second while a session records.
     private func refresh() {
         if let recordingSince {
             let elapsed = formatElapsed(Date().timeIntervalSince(recordingSince))
-            toggleItem.title = "Stop recording · \(elapsed)"
+            toggleItem.title = "Stop Recording · \(elapsed)"
+            toggleItem.image = NSImage(
+                systemSymbolName: "stop.circle", accessibilityDescription: nil)
         } else {
-            toggleItem.title = "Start recording"
+            toggleItem.title = "Start Recording"
+            toggleItem.image = NSImage(
+                systemSymbolName: "record.circle", accessibilityDescription: nil)
         }
 
         switch dictation {
         case .listening:
-            stateLabel.title = "● listening"
+            state.line = "● listening"
         case .transcribing:
-            stateLabel.title = "transcribing…"
+            state.line = "transcribing…"
         case .idle:
-            stateLabel.title =
-                recordingSince == nil ? Self.idleTitle(hotkeyName, tapToToggle) : "● recording"
+            if let recordingSince {
+                let elapsed = formatElapsed(Date().timeIntervalSince(recordingSince))
+                state.line = "● recording · \(elapsed)"
+            } else {
+                state.line = Self.idleTitle(hotkeyName, tapToToggle)
+            }
         }
     }
 
@@ -226,16 +253,10 @@ final class MenuBarController {
         NSPasteboard.general.setString(lastTranscript, forType: .string)
     }
 
-    /// Opens the config in whatever the user's editor for .json is. No
-    /// callback into the daemon: the module is flat, and the watcher picks up
-    /// the save on its own.
-    @objc private func editConfigClicked() {
-        Config.ensureFileExists()
-        // Before it opens, not after: a config written by an earlier yap has
-        // no line for the settings added since, and this is the moment someone
-        // is looking for them.
-        Config.ensureEveryKeyPresent()
-        NSWorkspace.shared.open(Config.path)
+    /// Opens the Settings window, building it on first click. "Open Config
+    /// File" lives inside it, for anyone who would rather type.
+    @objc private func settingsClicked() {
+        SettingsWindow.show()
     }
 
     /// No callback: quitting is unconditional. Anything that has to run on the
@@ -243,5 +264,47 @@ final class MenuBarController {
     /// also covers Cmd-Q and a launchd stop.
     @objc private func quitClicked() {
         NSApp.terminate(nil)
+    }
+}
+
+// MARK: -
+
+/// The one line of the header card that changes. Mutated by
+/// `MenuBarController.refresh()`; the view redraws itself.
+@MainActor
+private final class MenuState: ObservableObject {
+    @Published var line: String = ""
+}
+
+/// The card at the top of the dropdown: the yap mark, what it is doing, and
+/// which model it will do it with.
+private struct MenuHeaderView: View {
+    @ObservedObject var state: MenuState
+    /// Fixed for the life of the process — the model is chosen once, at launch.
+    let modelID: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Same treatment as the prompt pill's icon, so the two surfaces
+            // read as one app.
+            Image(nsImage: StatusIcon.image(size: 19) ?? NSImage())
+                .renderingMode(.template)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor.opacity(0.15), in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text("yap").font(.headline)
+                Text(state.line)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(modelID)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }

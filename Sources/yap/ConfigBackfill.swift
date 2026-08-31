@@ -4,9 +4,10 @@ import Foundation
 /// has, which is a different job from reading values out of it.
 ///
 /// A config written by an older yap has no line for anything added since, so
-/// "Edit config…" opens a file that hides half the settings and the only way
-/// to discover `tap_to_toggle` is the README. The template every new install
-/// gets lists them all; this brings an existing file up to the same standard.
+/// "Open Config File" opens a file that hides half the settings and the only
+/// way to discover `tap_to_toggle` is the Settings window or the README. The
+/// template every new install gets lists them all; this brings an existing
+/// file up to the same standard.
 extension Config {
     /// Add the keys this build knows about that the file on disk does not.
     ///
@@ -72,11 +73,18 @@ extension Config {
 
     /// The keys in the order the template lists them, so an inserted line
     /// reads where the documented file would have put it rather than wherever
-    /// the alphabet lands.
-    private static func inTemplateOrder(_ keys: some Collection<String>) -> [String] {
-        keys.sorted {
-            (template.range(of: "\"\($0)\"")?.lowerBound ?? template.endIndex)
-                < (template.range(of: "\"\($1)\"")?.lowerBound ?? template.endIndex)
+    /// the alphabet lands. Shared with `Config.serialized(_:)`, which owes the
+    /// GUI-written file the same order.
+    ///
+    /// Keys the template does not list share one position and are broken apart
+    /// by name — a total order, so rewriting the file twice cannot shuffle
+    /// somebody's hand-added keys around.
+    static func inTemplateOrder(_ keys: some Collection<String>) -> [String] {
+        func position(_ key: String) -> String.Index {
+            template.range(of: "\"\(key)\"")?.lowerBound ?? template.endIndex
+        }
+        return keys.sorted {
+            position($0) == position($1) ? $0 < $1 : position($0) < position($1)
         }
     }
 

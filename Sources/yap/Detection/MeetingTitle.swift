@@ -25,6 +25,16 @@ enum MeetingTitle {
         return NSString.path(withComponents: Array(components[...end]))
     }
 
+    /// Bundle identifier of the app behind a capture pid, for the exclusion
+    /// list. Reading Info.plist off the bundle path — no TCC, no AX, and it
+    /// works for sandboxed and hardened apps alike.
+    ///
+    /// A process with no `.app` around it has no identity we could store, so
+    /// it can never be excluded and never grows an Ignore button.
+    static func bundleID(forPID pid: pid_t) -> String? {
+        appBundlePath(forPID: pid).flatMap { Bundle(path: $0)?.bundleIdentifier }
+    }
+
     /// Best-effort meeting name from the capturing app's windows.
     static func capture(forCapturePID pid: pid_t) -> String? {
         let appPath = appBundlePath(forPID: pid)

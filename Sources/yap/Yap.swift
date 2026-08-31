@@ -431,7 +431,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
         // Hot reload. Create the file first, so the watcher arms on an inode
         // rather than standing on the directory waiting for one, and so
-        // "Edit config…" always has something to show.
+        // "Open Config File" always has something to show.
         Config.ensureFileExists()
         // And bring it up to date: an upgrade adds settings, and a config
         // written by an older yap has no line for any of them. Runs before the
@@ -696,12 +696,34 @@ final class Daemon: NSObject, NSApplicationDelegate {
         Task { [coordinator] in await coordinator.enqueue(dir) }
     }
 
+    /// End a session this app started by itself. For Ignore, which arrives
+    /// from the auto-record toast after a session is already running and from
+    /// the ask prompt before one exists.
+    private func stopSessionIfAutoStarted() {
+        guard session != nil, autoStarted else { return }
+        stopSession()
+    }
+
     /// Attach the daemon's handlers. Starting the detector is the caller's
     /// call: a manual session holds the mic, and detection must stay down
     /// until it ends.
     private func wire(_ detector: MeetingDetector) {
         detector.onMeetingStart = { [weak self, weak detector] pid, appName in
             guard let self else { return }
+
+            // Before anything else, including the AX title lookup and the
+            // back-to-back stop: an excluded app is invisible to every piece
+            // of meeting logic, not merely unprompted. Read fresh at each
+            // event, the same standing-consent pattern as auto-record below.
+            let bundleID = MeetingTitle.bundleID(forPID: pid)
+            if let bundleID, Config.meetingExcludedApps().contains(bundleID) {
+                warn("◇ \(appName ?? bundleID) is excluded — ignoring")
+                // Marks the pid, so the detector stops re-firing every poll;
+                // its end-of-meeting path clears the mark on its own.
+                detector?.declineCurrentMeeting()
+                return
+            }
+
             let title = MeetingTitle.capture(forCapturePID: pid)
             let who = appName ?? "Your microphone"
             warn("◆ \(who) is in use" + (title.map { " · \($0)" } ?? ""))
@@ -717,6 +739,21 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 self.stopSession()
             }
 
+            // "Never ask about this app again", offered from whichever surface
+            // the user is looking at. Both need it to also end the recording
+            // this event may have just started.
+            let ignoreApp: @MainActor () -> Void = { [weak self, weak detector] in
+                guard let bundleID else { return }
+                Config.update { config in
+                    var list = config["meeting_excluded_apps"] as? [String] ?? []
+                    if !list.contains(bundleID) { list.append(bundleID) }
+                    config["meeting_excluded_apps"] = list
+                }
+                warn("◇ \(appName ?? bundleID) added to the ignore list")
+                detector?.declineCurrentMeeting()
+                self?.stopSessionIfAutoStarted()
+            }
+
             // Standing consent is read at each event so config saves take
             // effect without a restart. Recording is always announced.
             if Config.meetingAutoRecord() {
@@ -726,7 +763,9 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 showToast(
                     title: appName.map { "Recording \($0) call" } ?? "Recording meeting",
                     body: title ?? "Stop from the menu bar or here",
-                    button: "Stop"
+                    button: "Stop",
+                    secondaryButton: bundleID != nil ? "Ignore" : nil,
+                    onSecondary: ignoreApp
                 ) { [weak self, weak detector] in
                     detector?.declineCurrentMeeting()
                     self?.stopSession()
@@ -738,6 +777,10 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 title: appName.map { "\($0) is in a call" } ?? "Your microphone is in use",
                 body: title ?? "Record this meeting?",
                 button: "Record",
+                // Only when we have both a name to show and an identity to
+                // store; a process with no app bundle gets Dismiss and no more.
+                secondaryButton: appName.flatMap { bundleID != nil ? "Ignore \($0)" : nil },
+                onSecondary: ignoreApp,
                 onDismiss: { detector?.declineCurrentMeeting() }
             ) { [weak self] in
                 guard let self, self.session == nil else { return }
