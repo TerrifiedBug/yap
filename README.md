@@ -133,8 +133,8 @@ meeting prompt — the list behind the "Ignore <App>" button on the prompt and t
 "Ignore" button on the auto-record banner. Clicking it adds the app here, ends
 any recording that button started, and yap says nothing about that app again.
 Manage the list under Meetings in the Settings window: it shows each app by icon
-and name, removes one with the minus button, and "Add App…" excludes an app
-ahead of time. Detection stays fail-open — an app you have never excluded still
+and name, and the + and − under it add one ahead of time or stop ignoring the
+one you select. Detection stays fail-open — an app you have never excluded still
 gets offered, even one yap has never heard of.
 
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
