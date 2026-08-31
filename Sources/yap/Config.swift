@@ -8,6 +8,7 @@ import Foundation
 ///       "mic_voice_processing": true,
 ///       "meeting_detection": false,
 ///       "meeting_auto_record": false,
+///       "meeting_excluded_apps": [],
 ///       "on_stop": "my-hook",
 ///       "dictation": {
 ///         "model": "parakeet-tdt-ctc-110m",
@@ -65,6 +66,17 @@ enum Config {
     /// detection enabled. Default off and read at each detection event.
     static func meetingAutoRecord() -> Bool {
         load()?["meeting_auto_record"] as? Bool ?? false
+    }
+
+    /// Bundle identifiers that never trigger the meeting prompt. Built by the
+    /// "Ignore <App>" button on the prompt and editable in Settings.
+    ///
+    /// An exclusion list rather than an allowlist: detection stays fail-open,
+    /// so a meeting app nobody has heard of still gets offered. Bundle ids,
+    /// not names or paths — stable across renames and localization, and
+    /// resolvable back to an icon and a name through `NSWorkspace`.
+    static func meetingExcludedApps() -> [String] {
+        load()?["meeting_excluded_apps"] as? [String] ?? []
     }
 
     /// Apple voice processing (acoustic echo cancellation) on the mic, so
@@ -162,7 +174,7 @@ enum Config {
     // MARK: - File
 
     /// Every value here is the built-in default, so writing this file changes
-    /// nothing about how yap behaves — it exists so "Edit config…" has
+    /// nothing about how yap behaves — it exists so "Open Config File" has
     /// something to open and the watcher has something to watch. `on_stop` is
     /// left out deliberately: there is no sensible default hook.
     static let template = """
@@ -172,6 +184,7 @@ enum Config {
           "mic_voice_processing": true,
           "meeting_detection": false,
           "meeting_auto_record": false,
+          "meeting_excluded_apps": [],
           "dictation": {
             "model": "parakeet-tdt-ctc-110m",
             "hotkey": "fn",
@@ -198,6 +211,80 @@ enum Config {
         } catch {
             warn("warning: could not create \(path.path): \(error)")
         }
+    }
+
+    // MARK: - Writing
+
+    /// Apply a change to the config file. The Settings window's only write
+    /// path; the watcher turns the save back into a live reload.
+    ///
+    /// A file that does not parse is left exactly as it is. Someone is
+    /// mid-edit in a text editor, and losing their work to a toggle click is
+    /// far worse than a setting that does not stick.
+    static func update(_ mutate: (inout [String: Any]) -> Void) {
+        ensureFileExists()
+        guard
+            let data = try? Data(contentsOf: path),
+            var config = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            warn("warning: \(path.path) is not valid JSON — not writing")
+            return
+        }
+        mutate(&config)
+        do {
+            try serialized(config).write(to: path, atomically: true, encoding: .utf8)
+        } catch {
+            warn("warning: could not write \(path.path): \(error)")
+        }
+    }
+
+    /// The config file as text: two-space JSON with keys in template order,
+    /// so a file the GUI writes reads like the one the template writes.
+    ///
+    /// Everything round-trips. Keys yap has never heard of keep their values
+    /// and land after the ones it has, ordered among themselves by name —
+    /// hand-adding a key to this file must never be punished by a click in
+    /// the Settings window.
+    static func serialized(_ config: [String: Any]) -> String {
+        var lines: [String] = []
+        for key in inTemplateOrder(config.keys) {
+            guard let value = config[key] else { continue }
+            // `dictation` is the one object the template spreads over lines;
+            // every other value, nested objects included, is one token.
+            if key == "dictation", let section = value as? [String: Any] {
+                var inner: [String] = []
+                for name in inTemplateOrder(section.keys) {
+                    guard let value = section[name] else { continue }
+                    inner.append("    \"\(name)\": \(token(value))")
+                }
+                lines.append("  \"\(key)\": {\n" + inner.joined(separator: ",\n") + "\n  }")
+            } else {
+                lines.append("  \"\(key)\": \(token(value))")
+            }
+        }
+        return "{\n" + lines.joined(separator: ",\n") + "\n}\n"
+    }
+
+    /// One JSON value on one line, spelled the way the template spells it.
+    ///
+    /// A nested object gets `{ "k": v }` rather than Foundation's
+    /// `{"k":v}` — `transcription` is written this way in the template, and a
+    /// GUI click should not reformat a line the user never touched.
+    private static func token(_ value: Any) -> String {
+        if let object = value as? [String: Any] {
+            guard !object.isEmpty else { return "{}" }
+            let pairs = inTemplateOrder(object.keys).compactMap { key -> String? in
+                object[key].map { "\"\(key)\": \(token($0))" }
+            }
+            return "{ " + pairs.joined(separator: ", ") + " }"
+        }
+        guard
+            let data = try? JSONSerialization.data(
+                withJSONObject: value,
+                options: [.fragmentsAllowed, .withoutEscapingSlashes]),
+            let text = String(data: data, encoding: .utf8)
+        else { return "null" }
+        return text
     }
 }
 
@@ -285,7 +372,7 @@ final class ConfigWatcher {
     /// The file is gone. Watch its directory instead and re-arm the moment
     /// something puts one back: a rename still in flight, an editor that
     /// unlinks before it writes, or someone deleting the config and getting
-    /// it back from "Edit config…". A directory kqueue costs exactly what a
+    /// it back from "Open Config File". A directory kqueue costs exactly what a
     /// file one does — nothing until the kernel has news — and the
     /// alternative is hot reload staying dead until the next restart.
     private func watchDirectory() {

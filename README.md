@@ -42,7 +42,12 @@ you one transcript, with timings and speaker labels.
 If `fn` does something else on your Mac, `yap doctor` says how to get it back.
 There is also `--hotkey`, and `dictation.hotkey` in the config file.
 
-"Copy last transcript" in the menu bar is there for the press that landed in
+"Settings…" in the menu bar opens a window covering every setting below, and
+every change lands immediately — the daemon does not need a restart to notice.
+"Open Config File" at the bottom of it opens the JSON, for anyone who would
+rather type.
+
+"Copy Last Transcript" in the menu bar is there for the press that landed in
 the wrong window. yap holds the most recent one in memory and nowhere else.
 
 "Quit yap" stops the background daemon until your next login. `yap start`
@@ -73,7 +78,8 @@ Command and drag the mark out of it once; it stays where you put it.
 ## Configuration
 
 `~/.config/yap/config.json`. Every key is optional and a flag beats the file.
-"Edit config…" in the menu bar opens it, filled in with the defaults — and an
+The Settings window is a GUI over this exact file — there is no second store —
+and "Open Config File" in it opens the JSON, filled in with the defaults. An
 upgrade adds a line for anything new, so the file always lists what this yap
 can do. Your own values are never touched.
 
@@ -82,6 +88,7 @@ can do. Your own values are never touched.
   "recordings_dir": "~/Recordings",
   "meeting_detection": false,
   "meeting_auto_record": false,
+  "meeting_excluded_apps": [],
   "mic_voice_processing": true,
   "on_stop": "my-hook",
   "transcription": { "enabled": true },
@@ -97,9 +104,9 @@ can do. Your own values are never touched.
 ```
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
-`mute_output`, `newline_after_release`, `meeting_detection` and
-`meeting_auto_record` all change on the spot. A new `model` or `recordings_dir` wants a restart, and yap says so when it
-sees one.
+`mute_output`, `newline_after_release`, `meeting_detection`,
+`meeting_auto_record` and `meeting_excluded_apps` all change on the spot. A new
+`model` or `recordings_dir` wants a restart, and yap says so when it sees one.
 
 `newline_after_release` hits Return once the text is in, which is what you want
 for chat boxes.
@@ -120,6 +127,15 @@ transcript.
 `meeting_auto_record` skips that prompt and starts recording immediately, with a
 visible Stop action. It only has an effect when `meeting_detection` is on, and is
 off by default.
+
+`meeting_excluded_apps` is the bundle identifiers of apps that never trigger the
+meeting prompt — the list behind the "Ignore <App>" button on the prompt and the
+"Ignore" button on the auto-record banner. Clicking it adds the app here, ends
+any recording that button started, and yap says nothing about that app again.
+Manage the list under Meetings in the Settings window: it shows each app by icon
+and name, removes one with the minus button, and "Add App…" excludes an app
+ahead of time. Detection stays fail-open — an app you have never excluded still
+gets offered, even one yap has never heard of.
 
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
 call coming out of your speakers goes back into the mic. Without it, the other
