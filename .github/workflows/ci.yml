@@ -46,7 +46,7 @@ jobs:
         run: |
           BIN=.build/arm64-apple-macosx/release/yap
           "$BIN" --help
-          "$BIN" models list
+          "$BIN" --version
           "$BIN" bench --help
 
       # The embedded __TEXT,__info_plist is what lets TCC attribute the

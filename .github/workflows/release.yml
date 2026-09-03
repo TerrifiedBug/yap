@@ -106,9 +106,12 @@ jobs:
         id: pkg
         working-directory: dist
         run: |
-          DMG="yap-${{ steps.v.outputs.version }}.dmg"
-          shasum -a 256 "$DMG" > "$DMG.sha256"
-          echo "sha256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          V="${{ steps.v.outputs.version }}"
+          shasum -a 256 "yap-$V.dmg" > "yap-$V.dmg.sha256"
+          # The in-app updater fetches this one and compares it against the zip
+          # before it unpacks anything.
+          shasum -a 256 "yap-$V.zip" > "yap-$V.zip.sha256"
+          echo "sha256=$(shasum -a 256 "yap-$V.dmg" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -116,6 +119,8 @@ jobs:
           files: |
             dist/yap-${{ steps.v.outputs.version }}.dmg
             dist/yap-${{ steps.v.outputs.version }}.dmg.sha256
+            dist/yap-${{ steps.v.outputs.version }}.zip
+            dist/yap-${{ steps.v.outputs.version }}.zip.sha256
           generate_release_notes: true
           fail_on_unmatched_files: true
 
@@ -151,10 +156,10 @@ jobs:
             depends_on macos: :sequoia
 
             app "yap.app"
-            # yap is a CLI first. The bundle exists so the build can be
-            # notarized and so TCC has something stable to hang grants on; this
-            # puts the command itself on PATH.
-            binary "#{appdir}/yap.app/Contents/MacOS/yap"
+            # No "binary" stanza. yap is a menu-bar app; the only subcommand
+            # left is "bench", which is a development tool, and putting a
+            # second path to the same executable on PATH is how the daemon
+            # ended up with two LaunchServices identities in the first place.
 
             # Homebrew replaces /Applications/yap.app, but a process keeps the
             # image it already mapped. Without this you stay on the old version
@@ -188,11 +193,11 @@ jobs:
             # ~/Library/LaunchAgents/<label>.plist, so every upgrade would
             # quietly switch launch-at-login off, and "quit" is recorded and
             # then reopened with "open -b" afterwards, which would start the
-            # daemon outside launchd where neither "yap stop" nor the login
-            # item can reach it.
+            # daemon outside launchd where the login item cannot reach it.
             #
             # Neither is a loss, because the cask never started the daemon.
-            # "yap install --launch-at-login" did, and it owns stopping it.
+            # The "Launch at login" toggle in Settings did, and it owns
+            # stopping it.
 
             # zap only runs on "brew uninstall --zap", which is the one time
             # taking the login item away is what was asked for. launchctl
@@ -208,13 +213,11 @@ jobs:
                 ]
 
             caveats <<~CAVEAT
-              Finish setting up with:
-                yap setup
-                yap install --launch-at-login
+              Launch yap from Applications. It asks for the permissions it
+              needs from the menu bar, and downloads the model in the
+              background on first run.
 
-              The login item belongs to yap rather than to this cask, so a
-              plain uninstall leaves it behind. To remove everything:
-                yap install --uninstall
+              To remove everything, including the login item:
                 brew uninstall --zap --cask yap
             CAVEAT
           end

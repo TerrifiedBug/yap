@@ -9,11 +9,34 @@ import AppKit
 /// too fine to hold its weight beside the system icons.
 enum StatusIcon {
     /// Template image at `size` points, so callers can tint it.
-    static func image(size: CGFloat) -> NSImage? {
+    ///
+    /// `badged` draws a filled dot at the bottom-right, for a staged update.
+    /// Still a template: the dot inherits the menu bar's own colour, which is
+    /// the only way a status item can raise its voice without looking like an
+    /// error.
+    static func image(size: CGFloat, badged: Bool = false) -> NSImage? {
         guard let data = svg.data(using: .utf8), let image = NSImage(data: data) else { return nil }
         image.size = NSSize(width: size, height: size)
         image.isTemplate = true
-        return image
+        guard badged else { return image }
+
+        let badge = (size * 0.34).rounded()
+        let composed = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            let dot = NSRect(
+                x: rect.maxX - badge, y: rect.minY, width: badge, height: badge)
+            // Clear a slightly larger circle first, so the dot reads as
+            // separate rather than as part of the head at 16 points.
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: dot.insetBy(dx: -1, dy: -1)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            // Any opaque colour: a template image carries only its alpha.
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        composed.isTemplate = true
+        return composed
     }
 
     /// Stroke 2, not the 1.5 the feather used: compared against the real menu

@@ -66,9 +66,10 @@ enum SettingsWindow {
 
 // MARK: - Panes
 
-/// The three things yap can be told about, in the order you meet them: the
-/// key you hold, what happens to a recording, and when to offer one.
+/// The four things yap can be told about, in the order you meet them: how it
+/// runs, the key you hold, what happens to a recording, and when to offer one.
 private enum SettingsPane: String, CaseIterable, Identifiable {
+    case general
     case dictation
     case recording
     case meetings
@@ -77,6 +78,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .general: return "General"
         case .dictation: return "Dictation"
         case .recording: return "Recording"
         case .meetings: return "Meetings"
@@ -87,6 +89,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     /// infer it from the controls.
     var summary: String {
         switch self {
+        case .general: return "Login, updates, logs."
         case .dictation: return "The key you hold, and what happens when you let go."
         case .recording: return "Where sessions land, and what runs after one."
         case .meetings: return "Whether yap offers to record when something else takes the mic."
@@ -95,6 +98,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .general: return "slider.horizontal.3"
         case .dictation: return "waveform"
         case .recording: return "recordingtape"
         case .meetings: return "person.wave.2.fill"
@@ -105,6 +109,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     /// is the record light, the same thing it means everywhere else in yap.
     var tint: Color {
         switch self {
+        case .general: return .gray
         case .dictation: return .accentColor
         case .recording: return .red
         case .meetings: return .indigo
@@ -116,7 +121,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private struct SettingsView: View {
     @StateObject private var model = SettingsModel()
-    @State private var pane: SettingsPane = .dictation
+    @State private var pane: SettingsPane = .general
 
     var body: some View {
         VStack(spacing: 0) {
@@ -164,6 +169,7 @@ private struct SettingsView: View {
             .padding(.top, 18)
 
             switch pane {
+            case .general: GeneralPane(model: model)
             case .dictation: DictationPane(model: model)
             case .recording: RecordingPane(model: model)
             case .meetings: MeetingsPane(model: model)

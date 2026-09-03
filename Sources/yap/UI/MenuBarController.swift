@@ -9,8 +9,13 @@ import SwiftUI
 /// transient and drives the state line; a recording session is long-lived and
 /// owns the toggle item plus its elapsed counter. They are tracked separately
 /// because they overlap: you can dictate a note while a meeting records.
+///
+/// It is also where onboarding lives. There is no `yap setup` any more, so a
+/// missing grant is a row you click rather than a line printed into a log
+/// nobody reads. Those rows are hidden in the ordinary case, which is every
+/// launch after the first.
 @MainActor
-final class MenuBarController {
+final class MenuBarController: NSObject, NSMenuDelegate {
     /// Transient dictation state, resolved against the session state by
     /// `refresh()`. Dictation wins the state line while it lasts — it is the
     /// thing the user is doing right now — and the session line comes back
@@ -19,6 +24,25 @@ final class MenuBarController {
         case idle
         case listening
         case transcribing
+    }
+
+    /// Where the model is. The status item now exists before the model does,
+    /// so this is the difference between "yap is thinking" and "yap is broken"
+    /// during the seconds — or, on a cold cache, minutes — before the first
+    /// press can work.
+    private enum Model {
+        case loading(String)
+        case failed
+        case ready
+    }
+
+    /// What macOS is still withholding. An option set because they are
+    /// independent and any combination can be true at once.
+    struct SetupNeeds: OptionSet {
+        let rawValue: Int
+        static let accessibility = SetupNeeds(rawValue: 1 << 0)
+        static let microphone = SetupNeeds(rawValue: 1 << 1)
+        static let fnMapping = SetupNeeds(rawValue: 1 << 2)
     }
 
     /// Name of the push-to-talk key, as the state line spells it. Live: the
@@ -31,15 +55,20 @@ final class MenuBarController {
     private let statusItem: NSStatusItem
     private let toggleItem: NSMenuItem
     private let copyItem: NSMenuItem
+    private let accessibilityItem: NSMenuItem
+    private let microphoneItem: NSMenuItem
+    private let fnItem: NSMenuItem
+    private let retryItem: NSMenuItem
+    private let updateItem: NSMenuItem
     /// Backs the header card. `refresh()` stays the single point of truth and
     /// pushes finished strings into it; SwiftUI does the redraw, so nothing
     /// here reaches into the view.
     private let state = MenuState()
 
     /// Fixed, so the menu keeps one width as the state line changes length.
-    /// Wide enough for the longest of them ("idle · hold rightCommand to
-    /// dictate") and for a model id.
-    private static let headerWidth: CGFloat = 260
+    /// Wide enough for the longest of them and for the Fn row, which spells
+    /// out whatever macOS has the key doing instead.
+    private static let headerWidth: CGFloat = 300
 
     /// The last thing dictation produced. In process memory, one at a time,
     /// never written to disk or log by this feature — the log deliberately
@@ -51,6 +80,8 @@ final class MenuBarController {
     private var lastTranscript: String?
 
     private var dictation: Dictation = .idle
+    private var model: Model = .ready
+    private var needs: SetupNeeds = []
     private var recordingSince: Date?
     private var ticker: Timer?
 
@@ -60,6 +91,15 @@ final class MenuBarController {
     var onStartRecording: (() -> Void)?
     /// Clicked "Stop recording".
     var onStopRecording: (() -> Void)?
+    var onGrantAccessibility: (() -> Void)?
+    var onGrantMicrophone: (() -> Void)?
+    var onOpenKeyboardSettings: (() -> Void)?
+    var onRetryModel: (() -> Void)?
+    var onInstallUpdate: (() -> Void)?
+    /// The menu is about to draw. The daemon re-reads the permission state
+    /// here, so the rows are right at the moment someone looks at them
+    /// without anything polling in between.
+    var onMenuWillOpen: (() -> Void)?
 
     init(modelID: String, hotkeyName: String, tapToToggle: Bool) {
         self.hotkeyName = hotkeyName
@@ -90,6 +130,27 @@ final class MenuBarController {
 
         menu.addItem(.separator())
 
+        // The onboarding rows, directly under the card so they are the first
+        // thing read. All hidden by default — no separator of their own,
+        // because an empty group would leave two rules stacked on every launch
+        // after the first.
+        accessibilityItem = Self.item(
+            "Grant Accessibility…", symbol: "hand.raised",
+            action: #selector(grantAccessibilityClicked))
+        microphoneItem = Self.item(
+            "Grant Microphone…", symbol: "mic.slash",
+            action: #selector(grantMicrophoneClicked))
+        fnItem = Self.item(
+            "Open Keyboard Settings…", symbol: "keyboard",
+            action: #selector(openKeyboardSettingsClicked))
+        retryItem = Self.item(
+            "Retry Model Download", symbol: "arrow.clockwise",
+            action: #selector(retryModelClicked))
+        for item in [accessibilityItem, microphoneItem, fnItem, retryItem] {
+            item.isHidden = true
+            menu.addItem(item)
+        }
+
         toggleItem = NSMenuItem(
             title: "Start Recording",
             action: #selector(toggleClicked),
@@ -112,6 +173,14 @@ final class MenuBarController {
 
         menu.addItem(.separator())
 
+        // Above Settings, because it is the more urgent of the two and it is
+        // only ever there when there is something to do.
+        updateItem = Self.item(
+            "Update", symbol: "arrow.down.circle.fill",
+            action: #selector(installUpdateClicked))
+        updateItem.isHidden = true
+        menu.addItem(updateItem)
+
         let settings = NSMenuItem(
             title: "Settings…",
             action: #selector(settingsClicked),
@@ -130,10 +199,16 @@ final class MenuBarController {
         )
         menu.addItem(quit)
 
-        for item in [toggleItem, copyItem, settings, quit] {
+        super.init()
+
+        for item in [
+            toggleItem, copyItem, settings, quit,
+            accessibilityItem, microphoneItem, fnItem, retryItem, updateItem,
+        ] {
             item.target = self
         }
 
+        menu.delegate = self
         statusItem.menu = menu
 
         // Template image, never tinted. Colouring the icon while recording put
@@ -141,6 +216,12 @@ final class MenuBarController {
         // read as an error; the menu carries the state instead.
         statusItem.button?.image = StatusIcon.image(size: 16)
         statusItem.button?.imagePosition = .imageLeft
+    }
+
+    private static func item(_ title: String, symbol: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        return item
     }
 
     /// The push-to-talk key is held and the mic is hot.
@@ -158,6 +239,51 @@ final class MenuBarController {
 
     func setIdle() {
         dictation = .idle
+        refresh()
+    }
+
+    /// The model is on its way. `downloading` distinguishes a first run — which
+    /// is a several-hundred-megabyte wait — from a warm cache, which is a
+    /// third of a second.
+    func setModelLoading(downloading: Bool, sizeMB: Int) {
+        model = .loading(downloading ? "downloading model (~\(sizeMB) MB)…" : "loading model…")
+        refresh()
+    }
+
+    /// Warm-up threw. Deliberately not fatal: the rest of the app still works,
+    /// and the row below offers the only thing that can help.
+    func setModelFailed() {
+        model = .failed
+        refresh()
+    }
+
+    func setModelReady() {
+        model = .ready
+        refresh()
+    }
+
+    /// A staged update, or nil for none. `enabled` is false while a recording
+    /// or a press is live: restarting then would cost audio the user is
+    /// relying on, and a greyed row says so better than a refusal would.
+    func setUpdate(version: String?, enabled: Bool) {
+        updateItem.isHidden = version == nil
+        updateItem.isEnabled = enabled
+        if let version {
+            updateItem.title = "Update to \(version) · Restart"
+        }
+        // The only time the icon says anything on its own. A dot, not a
+        // colour: a tinted mark next to the system's recording indicator
+        // already read as an error once.
+        statusItem.button?.image = StatusIcon.image(size: 16, badged: version != nil)
+    }
+
+    /// What is still missing, and what macOS has Fn doing instead when that is
+    /// the thing missing.
+    func setSetupNeeds(_ needs: SetupNeeds, fnAction: String?) {
+        self.needs = needs
+        if let fnAction {
+            fnItem.title = "Fn key is set to \(fnAction) — Open Keyboard Settings…"
+        }
         refresh()
     }
 
@@ -204,8 +330,13 @@ final class MenuBarController {
         refresh()
     }
 
-    /// Single point of truth for the toggle title and the header's state line.
-    /// Called on every state change and once a second while a session records.
+    func menuWillOpen(_ menu: NSMenu) {
+        onMenuWillOpen?()
+    }
+
+    /// Single point of truth for the toggle title, the onboarding rows and the
+    /// header's state line. Called on every state change and once a second
+    /// while a session records.
     private func refresh() {
         if let recordingSince {
             let elapsed = formatElapsed(Date().timeIntervalSince(recordingSince))
@@ -218,6 +349,18 @@ final class MenuBarController {
                 systemSymbolName: "record.circle", accessibilityDescription: nil)
         }
 
+        accessibilityItem.isHidden = !needs.contains(.accessibility)
+        microphoneItem.isHidden = !needs.contains(.microphone)
+        fnItem.isHidden = !needs.contains(.fnMapping)
+        if case .failed = model {
+            retryItem.isHidden = false
+        } else {
+            retryItem.isHidden = true
+        }
+
+        // Precedence, most immediate first: what you are doing now, then what
+        // is running, then what is stopping yap working at all, then the model,
+        // then the resting line.
         switch dictation {
         case .listening:
             state.line = "● listening"
@@ -227,8 +370,14 @@ final class MenuBarController {
             if let recordingSince {
                 let elapsed = formatElapsed(Date().timeIntervalSince(recordingSince))
                 state.line = "● recording · \(elapsed)"
+            } else if !needs.isEmpty {
+                state.line = "needs setup"
             } else {
-                state.line = Self.idleTitle(hotkeyName, tapToToggle)
+                switch model {
+                case .loading(let line): state.line = line
+                case .failed: state.line = "model download failed"
+                case .ready: state.line = Self.idleTitle(hotkeyName, tapToToggle)
+                }
             }
         }
     }
@@ -244,6 +393,12 @@ final class MenuBarController {
             onStopRecording?()
         }
     }
+
+    @objc private func grantAccessibilityClicked() { onGrantAccessibility?() }
+    @objc private func grantMicrophoneClicked() { onGrantMicrophone?() }
+    @objc private func openKeyboardSettingsClicked() { onOpenKeyboardSettings?() }
+    @objc private func retryModelClicked() { onRetryModel?() }
+    @objc private func installUpdateClicked() { onInstallUpdate?() }
 
     /// Copies the last transcript, for the press that landed somewhere wrong
     /// or on a clipboard that has since moved on.

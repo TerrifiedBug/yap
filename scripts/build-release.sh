@@ -82,6 +82,13 @@ notarize() {
 
 notarize "$APP" "app"
 
+step "Zipping the app for in-app updates"
+# The .dmg is what a person downloads; this is what a running yap downloads.
+# ditto -c -k --keepParent, because it is the only archiver that preserves the
+# code signature and the extended attributes intact — Updater.swift verifies
+# the signature of whatever comes out of this before it swaps anything.
+ditto -c -k --keepParent "$APP" "$DIST/yap-$VERSION.zip"
+
 step "Building .dmg"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP" "$DMG_STAGE/"
@@ -106,3 +113,4 @@ fi
 step "Done"
 echo "App: $APP"
 echo "DMG: $DMG"
+echo "ZIP: $DIST/yap-$VERSION.zip"

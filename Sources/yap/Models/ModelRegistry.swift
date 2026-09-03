@@ -22,7 +22,6 @@ enum ModelRegistry {
             version: .tdtCtc110m,
             sizeMB: 220,
             languages: ["en"],
-            supportsSessions: true,
             recommended: true
         ),
         // Kept as the accuracy option: 2.06% WER is the best of the three,
@@ -34,7 +33,6 @@ enum ModelRegistry {
             version: .v2,
             sizeMB: 465,
             languages: ["en"],
-            supportsSessions: true,
             recommended: false
         ),
         TranscriptionModel(
@@ -43,7 +41,6 @@ enum ModelRegistry {
             version: .v3,
             sizeMB: 500,
             languages: ["multi"],
-            supportsSessions: true,
             recommended: false
         )
     ]

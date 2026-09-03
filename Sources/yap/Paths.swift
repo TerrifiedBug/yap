@@ -40,6 +40,21 @@ enum Paths {
         return dir.appendingPathComponent("daemon.lock")
     }
 
+    /// `~/Library/Application Support/yap/updates`, where a downloaded build
+    /// is unpacked and checked before it is allowed anywhere near
+    /// /Applications. Emptied once an update lands, and again at every launch,
+    /// so an interrupted download costs nothing but the bytes.
+    static var updatesDirectory: URL {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/yap/updates", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        return dir
+    }
+
     /// launchd creates the log files itself and does not honour a mode, so
     /// tighten them to 0600 after the agent is installed. Existing files are
     /// tightened too, which covers an agent installed by an earlier build.
