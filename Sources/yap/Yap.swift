@@ -21,22 +21,6 @@ struct Yap: ParsableCommand {
         subcommands: [Run.self, Bench.self],
         defaultSubcommand: Run.self
     )
-
-    /// Drop arguments an older yap's LaunchAgent still passes.
-    ///
-    /// yap 0.2 wrote `ProgramArguments = [binary, "run", "--skip-doctor"]`,
-    /// and that plist survives an upgrade — nothing rewrites it but yap. Left
-    /// alone, ArgumentParser would exit 64 on the unknown flag, `KeepAlive`
-    /// would relaunch, and the loop would never break, because the thing that
-    /// repairs the plist is a yap that got as far as running. So the flag is
-    /// ignored here rather than accepted as a no-op option — it does not
-    /// appear in `--help`, and `LaunchAgent.refreshIfStale()` removes the
-    /// reason for it on the first successful start.
-    static func main() {
-        let retired: Set<String> = ["--skip-doctor"]
-        let arguments = CommandLine.arguments.dropFirst().filter { !retired.contains($0) }
-        Self.main(Array(arguments))
-    }
 }
 
 // MARK: - run

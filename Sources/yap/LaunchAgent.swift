@@ -114,11 +114,15 @@ enum LaunchAgent {
 
     /// Rewrite an installed plist that no longer says what this build writes.
     ///
-    /// The upgrade path, and the only one there is: yap 0.2 wrote
-    /// `run --skip-doctor` and pointed at whichever binary was current then.
-    /// Nothing but yap rewrites that file, so a build that changed either has
-    /// to repair it the first time it runs. Silent when there is nothing to
-    /// do, which is every launch after the first.
+    /// Nothing but yap maintains that file, so a build whose arguments or
+    /// binary path have moved on has to repair it the first time it runs, or
+    /// the login item keeps launching the old shape for ever. Silent when
+    /// there is nothing to do, which is every launch after the first.
+    ///
+    /// It repairs the file, not launchd's loaded copy of it: launchd reads a
+    /// plist when the job is bootstrapped and not again, so the corrected
+    /// definition takes effect at the next login. Reloading it from in here
+    /// would mean booting out the job this process *is*.
     static func refreshIfStale() {
         guard isInstalled, Bundle.main.bundlePath.hasSuffix(".app"),
             let binary = Bundle.main.executableURL?.resolvingSymlinksInPath().path

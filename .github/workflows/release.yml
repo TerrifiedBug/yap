@@ -167,23 +167,41 @@ jobs:
             # the new binary on disk and agrees with the version you just
             # installed — the worst shape for a bug, because it looks fixed.
             #
-            # "kickstart -k" rather than an uninstall stanza: it replaces the
-            # job launchd already owns, so the daemon stays inside launchd and
-            # the plist — the login item — is untouched.
+            # The rewrite first, and it is not cosmetic. yap 0.2's plist ran
+            # "yap run --skip-doctor", an argument 0.3 does not take: launchd
+            # would start it, ArgumentParser would exit 64, KeepAlive would
+            # relaunch it, and the login item would spin for ever. Nothing but
+            # this line and yap itself ever rewrites that file.
+            #
+            # bootout + bootstrap rather than "kickstart -k", because launchd
+            # reads a plist when the job is bootstrapped and not again — a
+            # kickstart would faithfully relaunch the arguments it already had
+            # in memory, rewritten file or not.
             #
             # Measured, because the alternative is losing someone's meeting:
-            # -k delivers SIGTERM, not SIGKILL, and yap catches SIGTERM and
-            # routes it through applicationWillTerminate. So a recording in
+            # bootout delivers SIGTERM, not SIGKILL, and yap catches SIGTERM
+            # and routes it through applicationWillTerminate. So a recording in
             # flight is finalized and transcribes on the next start instead of
-            # losing its meta.json. launchd brings the new image up about five
-            # seconds later.
+            # losing its meta.json.
             #
-            # must_succeed: false because an install with no login item has no
-            # job to restart, and launchctl exits 113 there. Not having asked
-            # for launch-at-login is not a reason to fail an upgrade.
+            # must_succeed: false throughout because an install with no login
+            # item has no job to restart, and launchctl exits 113 there. Not
+            # having asked for launch-at-login is not a reason to fail an
+            # upgrade.
             postflight do
+              agent = File.expand_path("~/Library/LaunchAgents/com.terrifiedbug.yap.plist")
+              next unless File.exist?(agent)
+
+              system_command "/usr/bin/plutil",
+                             args:         ["-replace", "ProgramArguments", "-json",
+                                            %Q(["#{appdir}/yap.app/Contents/MacOS/yap", "run"]),
+                                            agent],
+                             must_succeed: false
               system_command "/bin/launchctl",
-                             args:         ["kickstart", "-k", "gui/#{Process.uid}/com.terrifiedbug.yap"],
+                             args:         ["bootout", "gui/#{Process.uid}/com.terrifiedbug.yap"],
+                             must_succeed: false
+              system_command "/bin/launchctl",
+                             args:         ["bootstrap", "gui/#{Process.uid}", agent],
                              must_succeed: false
             end
 
