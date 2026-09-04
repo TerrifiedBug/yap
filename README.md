@@ -20,8 +20,9 @@ and drag yap to Applications.
 
 Then launch yap from Applications. The menu bar mark appears straight away and
 walks you through the rest: it asks for Accessibility, then the microphone, and
-pulls the model down in the background. That is 220 MB, once, and then you are
-offline forever.
+pulls the model down in the background. That is 220 MB, once. Nothing you say
+ever leaves the machine; the only thing yap goes online for afterwards is a
+once-a-day check for a new version, which you can switch off in Settings.
 
 Builds are signed with a Developer ID certificate and notarized by Apple, so
 there is no Gatekeeper prompt. Apple Silicon only, because the model runs on
@@ -110,11 +111,12 @@ Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 change on the spot. A new `model` or `recordings_dir` wants a restart, and yap
 says so when it sees one.
 
-`hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
-`rightControl`, `rightShift`, `leftOption`, `leftControl`, `leftShift` — or a
+`hotkey` is a modifier held on its own — `fn`, `rightoption`, `rightcommand`,
+`rightcontrol`, `rightshift`, `leftoption`, `leftcontrol`, `leftshift` — or a
 chord like `cmd+shift+space`, or a lone function key like `f5`. The recorder in
-Settings → Dictation writes this for you; a chord is swallowed while yap holds
-it, so the app underneath never sees it.
+Settings → Dictation writes this for you, in that spelling; typing it by hand
+is case-insensitive and ignores `-` and `_`, so `rightOption` works too. A
+chord is swallowed while yap holds it, so the app underneath never sees it.
 
 `newline_after_release` hits Return once the text is in, which is what you want
 for chat boxes.

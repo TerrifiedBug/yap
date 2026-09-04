@@ -43,6 +43,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         static let accessibility = SetupNeeds(rawValue: 1 << 0)
         static let microphone = SetupNeeds(rawValue: 1 << 1)
         static let fnMapping = SetupNeeds(rawValue: 1 << 2)
+        /// The grant reads as present but the event tap would not register,
+        /// which is what a stale Accessibility row looks like from in here.
+        static let hotkeyTap = SetupNeeds(rawValue: 1 << 3)
     }
 
     /// Name of the push-to-talk key, as the state line spells it. Live: the
@@ -58,6 +61,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let accessibilityItem: NSMenuItem
     private let microphoneItem: NSMenuItem
     private let fnItem: NSMenuItem
+    private let tapItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let updateItem: NSMenuItem
     /// Backs the header card. `refresh()` stays the single point of truth and
@@ -143,10 +147,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         fnItem = Self.item(
             "Open Keyboard Settings…", symbol: "keyboard",
             action: #selector(openKeyboardSettingsClicked))
+        tapItem = Self.item(
+            "Hotkey unavailable — Re-add yap in Accessibility…",
+            symbol: "exclamationmark.triangle",
+            action: #selector(grantAccessibilityClicked))
         retryItem = Self.item(
             "Retry Model Download", symbol: "arrow.clockwise",
             action: #selector(retryModelClicked))
-        for item in [accessibilityItem, microphoneItem, fnItem, retryItem] {
+        for item in [accessibilityItem, microphoneItem, fnItem, tapItem, retryItem] {
             item.isHidden = true
             menu.addItem(item)
         }
@@ -203,7 +211,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, copyItem, settings, quit,
-            accessibilityItem, microphoneItem, fnItem, retryItem, updateItem,
+            accessibilityItem, microphoneItem, fnItem, tapItem, retryItem, updateItem,
         ] {
             item.target = self
         }
@@ -352,6 +360,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         accessibilityItem.isHidden = !needs.contains(.accessibility)
         microphoneItem.isHidden = !needs.contains(.microphone)
         fnItem.isHidden = !needs.contains(.fnMapping)
+        tapItem.isHidden = !needs.contains(.hotkeyTap)
         if case .failed = model {
             retryItem.isHidden = false
         } else {

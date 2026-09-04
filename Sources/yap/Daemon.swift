@@ -140,37 +140,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
         // them.
         menuBar.onMenuWillOpen = { [weak self] in self?.evaluateSetup() }
 
-        // The handlers before the queue that fires them: `resumePending`
-        // below runs as soon as the model is warm, and a session finishing
-        // against an unset handler would fall back to a bare notification.
-        Task { [coordinator] in
-            // The handler fires on whatever executor the coordinator drains
-            // on, so hop back before touching the menu bar. Weak, or the
-            // coordinator would own the daemon that owns it.
-            await coordinator.setStatusHandler { [weak self] busy in
-                Task { @MainActor in self?.show(busy: busy) }
-            }
-            await coordinator.setTranscriptReadyHandler { dir in
-                // Fires on the coordinator's executor; hop to the main actor
-                // for AppKit.
-                Task { @MainActor in
-                    showToast(
-                        title: "Transcript ready",
-                        body: dir.lastPathComponent,
-                        button: "Open",
-                        secondaryButton: "Name…",
-                        onSecondary: { [weak self] in self?.promptForName(of: dir) },
-                        destructiveButton: "Delete",
-                        onDestructive: { [weak self] in self?.trashSession(dir) }
-                    ) {
-                        NSWorkspace.shared.activateFileViewerSelecting(
-                            [dir.appendingPathComponent("transcript.md")]
-                        )
-                    }
-                }
-            }
-        }
-
         // First launch asks, rather than telling a log file. Everything after
         // that is `evaluateSetup`, which is also what turns the tap on the
         // moment the box is ticked — no relaunch.
@@ -231,6 +200,13 @@ final class Daemon: NSObject, NSApplicationDelegate {
     /// cold cache is a several-hundred-megabyte download, and yap used to
     /// spend it invisible. Retryable, because the one thing that can fail
     /// here is a network the user can fix.
+    ///
+    /// One chain, deliberately: the handlers are installed, then the model is
+    /// warmed, then the backlog is resumed. Installing them from a second
+    /// unstructured task raced this one — nothing observed it, because warm-up
+    /// is always slower than two actor hops, but "always slower" is not an
+    /// ordering guarantee and a resumed session would have fallen back to a
+    /// bare notification when it lost.
     private func loadModel() {
         modelReady = false
         menuBar.setModelLoading(
@@ -240,6 +216,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
         }
         Task { [weak self] in
             guard let self else { return }
+            await self.installCoordinatorHandlers()
             do {
                 try await self.transcriber.warmUp()
                 self.modelReady = true
@@ -253,6 +230,39 @@ final class Daemon: NSObject, NSApplicationDelegate {
             } catch {
                 warn("warmup failed: \(error)")
                 self.menuBar.setModelFailed()
+            }
+        }
+    }
+
+    /// Point the transcription queue at the menu bar and the transcript pill.
+    ///
+    /// Idempotent — a retry after a failed warm-up simply reassigns them —
+    /// and awaited before anything can enqueue, so a session that finishes
+    /// during startup gets the pill rather than the fallback notification.
+    private func installCoordinatorHandlers() async {
+        // The handler fires on whatever executor the coordinator drains on, so
+        // hop back before touching the menu bar. Weak, or the coordinator
+        // would own the daemon that owns it.
+        await coordinator.setStatusHandler { [weak self] busy in
+            Task { @MainActor in self?.show(busy: busy) }
+        }
+        await coordinator.setTranscriptReadyHandler { [weak self] dir in
+            // Fires on the coordinator's executor; hop to the main actor for
+            // AppKit.
+            Task { @MainActor in
+                showToast(
+                    title: "Transcript ready",
+                    body: dir.lastPathComponent,
+                    button: "Open",
+                    secondaryButton: "Name…",
+                    onSecondary: { [weak self] in self?.promptForName(of: dir) },
+                    destructiveButton: "Delete",
+                    onDestructive: { [weak self] in self?.trashSession(dir) }
+                ) {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [dir.appendingPathComponent("transcript.md")]
+                    )
+                }
             }
         }
     }
@@ -314,25 +324,32 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
         let fnAction = hotkey.usesFn ? Permissions.fnKeyAction() : nil
         if fnAction != nil { needs.insert(.fnMapping) }
-        menuBar.setSetupNeeds(needs, fnAction: fnAction)
 
         // The tap needs the grant, and the grant can arrive at any time. Start
         // it the moment it does — the whole reason this is event-driven is so
         // nobody has to relaunch yap after ticking a box.
-        guard granted, !tapRunning else { return }
-        do {
-            try monitor.start { [weak self] event in
-                // The tap callback has already hopped to the main queue.
-                MainActor.assumeIsolated { self?.handle(event) }
+        if granted, !tapRunning {
+            do {
+                try monitor.start { [weak self] event in
+                    // The tap callback has already hopped to the main queue.
+                    MainActor.assumeIsolated { self?.handle(event) }
+                }
+                tapRunning = true
+                warn("listening on \(hotkey.serialized)")
+            } catch {
+                // Not fatal, and not an exit — exiting here is what used to
+                // turn launch-at-login into a relaunch loop. But it must not
+                // be silent either: the grant reads as present, so without a
+                // row of its own the menu would look complete while the
+                // hotkey did nothing at all. `tapCreate` refusing a
+                // trusted process is a stale grant, and re-adding the row in
+                // System Settings is what fixes it.
+                warn("failed to register hotkey tap: \(error)")
+                needs.insert(.hotkeyTap)
             }
-            tapRunning = true
-            warn("listening on \(hotkey.serialized)")
-        } catch {
-            // Not fatal, and not an exit: the process stays up with the row
-            // visible, so the menu can still say what is wrong. Exiting here
-            // is what used to turn launch-at-login into a relaunch loop.
-            warn("failed to register hotkey tap: \(error)")
         }
+
+        menuBar.setSetupNeeds(needs, fnAction: fnAction)
     }
 
     /// Finalize anything live before the process goes away. A session killed

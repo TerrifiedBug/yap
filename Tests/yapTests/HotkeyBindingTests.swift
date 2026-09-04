@@ -24,11 +24,14 @@ final class HotkeyBindingTests: XCTestCase {
         }
     }
 
-    /// Every config written before free-form bindings existed says one of
-    /// these, in this spelling.
-    func testLegacyCamelCaseNamesStillParse() {
+    /// Parsing ignores case and separators, so a hand-edited config saying
+    /// `rightOption` or `RIGHT_OPTION` lands on the same binding the recorder
+    /// writes as `rightoption`. Not a legacy path — the recorder has only ever
+    /// written the canonical form — just a file people edit by hand.
+    func testParsingIgnoresCaseAndSeparators() {
         XCTAssertEqual(HotkeyBinding(parsing: "rightOption"), HotkeyBinding(parsing: "rightoption"))
         XCTAssertEqual(HotkeyBinding(parsing: "RIGHT_SHIFT"), HotkeyBinding(parsing: "rightshift"))
+        XCTAssertEqual(HotkeyBinding(parsing: "right-control")?.serialized, "rightcontrol")
         XCTAssertEqual(HotkeyBinding(parsing: "fn"), .fn)
     }
 

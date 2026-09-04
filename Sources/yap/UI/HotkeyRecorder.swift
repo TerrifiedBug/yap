@@ -55,7 +55,9 @@ final class HotkeyRecorderView: NSView {
     /// afterwards does not also commit it on its own.
     private var sawKey = false
     /// Shown instead of the binding for a moment when a candidate is refused.
-    private var complaint: String?
+    /// Readable, like `isRecording`, because it is the whole of the field's
+    /// answer to a key it will not accept.
+    private(set) var complaint: String?
     private var complaintClear: DispatchWorkItem?
 
     override var acceptsFirstResponder: Bool { true }
