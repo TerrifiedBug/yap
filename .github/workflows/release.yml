@@ -54,6 +54,32 @@ jobs:
           grep -qF 'version: "${{ steps.v.outputs.version }}"' Sources/yap/Yap.swift \
             || { echo "Sources/yap/Yap.swift version literal != ${{ steps.v.outputs.version }} — bump it first" >&2; exit 1; }
 
+      # Before the twenty minutes of build and notarization, so a release with
+      # no notes fails in seconds rather than after Apple has stamped it.
+      # Notes are written by hand: the generated list of PR titles says what
+      # was merged, which is not the same as what changed for the person
+      # installing it.
+      - name: Read the release notes
+        id: notes
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          awk -v want="## $V" '
+            $0 == want { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          # -s rather than -f: an empty section is the same mistake as a
+          # missing one, and both should stop the release.
+          [ -s notes.md ] || {
+            echo "CHANGELOG.md has no '## $V' section — write the notes first" >&2
+            exit 1
+          }
+          {
+            echo 'body<<YAPNOTES'
+            cat notes.md
+            echo 'YAPNOTES'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Cache SwiftPM
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -121,6 +147,10 @@ jobs:
             dist/yap-${{ steps.v.outputs.version }}.dmg.sha256
             dist/yap-${{ steps.v.outputs.version }}.zip
             dist/yap-${{ steps.v.outputs.version }}.zip.sha256
+          # Both: GitHub puts `body` first and appends its own list of merged
+          # pull requests and the full-changelog link underneath, so the notes
+          # lead and the provenance is still one click away.
+          body: ${{ steps.notes.outputs.body }}
           generate_release_notes: true
           fail_on_unmatched_files: true
 
