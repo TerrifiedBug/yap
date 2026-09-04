@@ -273,31 +273,19 @@ final class Updater {
             throw UpdateError("checksum mismatch")
         }
 
-        // ditto, and the "no new processes" rule does not forbid it — that
-        // rule is about helpers, daemons and sidecars, the things that stay
-        // resident and hold a second copy of the model. This is a one-shot
-        // that runs only on the update path, measured at 20 ms on our own
-        // 3.3 MB artifact, and is gone before the next line. yap already
-        // forks this way for every notification (osascript), every on_stop
-        // hook (/bin/sh) and every launchctl query.
-        //
-        // The alternative is not "use a framework": Foundation has no
-        // unarchiver, Compression handles raw deflate rather than the zip
-        // container, and libarchive is not public API. It would mean
-        // hand-rolling a zip reader that restores modes, symlinks and
-        // extended attributes faithfully enough that
-        // `SecStaticCodeCheckValidity` still passes below — several hundred
-        // lines of security-critical code, to avoid 20 ms of a system tool
-        // Apple wrote for exactly this. Nothing about that trade is minimal.
+        // In process, because yap spawns nothing. See `ZipArchive` for what
+        // it does and does not restore, and why that is enough for the
+        // signature check below to pass.
         let unpacked = dir.appendingPathComponent(release.version, isDirectory: true)
         try? FileManager.default.removeItem(at: unpacked)
-        let ditto = Process()
-        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        ditto.arguments = ["-x", "-k", zip.path, unpacked.path]
-        try ditto.run()
-        ditto.waitUntilExit()
+        do {
+            try ZipArchive.extract(zip, to: unpacked)
+        } catch {
+            try? FileManager.default.removeItem(at: zip)
+            try? FileManager.default.removeItem(at: unpacked)
+            throw UpdateError("couldn't unpack the download: \(error.localizedDescription)")
+        }
         try? FileManager.default.removeItem(at: zip)
-        guard ditto.terminationStatus == 0 else { throw UpdateError("couldn't unpack the download") }
 
         let app = unpacked.appendingPathComponent("yap.app")
         guard FileManager.default.fileExists(atPath: app.path) else {
