@@ -13,11 +13,16 @@ No account, no upload. The network gets used once, to fetch the model.
 
 ```sh
 brew install --cask terrifiedbug/tap/yap
-yap setup
 ```
 
-`yap setup` asks for the permissions and pulls the model down. That is 220 MB,
-once, and then you are offline forever.
+Or download the .dmg from [Releases](https://github.com/TerrifiedBug/yap/releases)
+and drag yap to Applications.
+
+Then launch yap from Applications. The menu bar mark appears straight away and
+walks you through the rest: it asks for Accessibility, then the microphone, and
+pulls the model down in the background. That is 220 MB, once, and then you are
+offline: nothing you say ever leaves the machine, and yap makes no network
+request of its own again unless you ask it to check for a new version.
 
 Builds are signed with a Developer ID certificate and notarized by Apple, so
 there is no Gatekeeper prompt. Apple Silicon only, because the model runs on
@@ -28,30 +33,32 @@ the Neural Engine.
 Hold `fn`, speak, release. A small pill shows up while the mic is live, and the
 same mark sits in the menu bar the whole time yap is running.
 
-```sh
-yap install --launch-at-login   # menu bar, back after every login
-yap                             # foreground instead, dies with the terminal
-yap record                      # record a meeting now, ^C to stop
-yap doctor                      # permissions, key mapping, model
-```
+Everything else is in that menu: start a recording, copy the last transcript,
+open Settings, quit. Dictation and the meeting recorder share one process and
+one loaded model. The recorder takes your mic and the system audio as two
+separate tracks and gives you one transcript, with timings and speaker labels.
 
-Dictation and the meeting recorder share one process and one loaded model. The
-recorder takes your mic and the system audio as two separate tracks and gives
-you one transcript, with timings and speaker labels.
+"Settings…" opens a window covering every setting below, and every change lands
+immediately — the daemon does not need a restart to notice. General has the
+login item, updates and a way to the logs; Dictation has the hotkey, which you
+set by clicking the field and pressing the key or chord you want. "Open Config
+File" at the bottom opens the JSON, for anyone who would rather type.
 
-If `fn` does something else on your Mac, `yap doctor` says how to get it back.
-There is also `--hotkey`, and `dictation.hotkey` in the config file.
+If `fn` is set to do something else on your Mac, the menu says so and offers to
+open Keyboard settings.
 
-"Settings…" in the menu bar opens a window covering every setting below, and
-every change lands immediately — the daemon does not need a restart to notice.
-"Open Config File" at the bottom of it opens the JSON, for anyone who would
-rather type.
+"Copy Last Transcript" is there for the press that landed in the wrong window.
+yap holds the most recent one in memory and nowhere else.
 
-"Copy Last Transcript" in the menu bar is there for the press that landed in
-the wrong window. yap holds the most recent one in memory and nowhere else.
+"Quit yap" stops it until you launch it again, or until your next login if
+"Launch at login" is on.
 
-"Quit yap" stops the background daemon until your next login. `yap start`
-brings it back sooner.
+Settings → General has a "Check Now" button. It asks GitHub Releases once,
+downloads the new build, verifies its signature against the one yap is running
+under, and puts "Update to x.y.z · Restart" in the menu. Nothing is replaced
+until you click that, and it is never offered while a recording is in flight.
+There is no automatic check and no timer behind it: yap does nothing at all
+while it is idle.
 
 One daemon holds the hotkey at a time. Start another — from Applications, from
 a terminal, or because an upgrade restarted the login item — and the new one
@@ -62,26 +69,21 @@ to be seen, look in its hidden section. Managers that file newly-appeared items
 there catch yap the first time it shows up. Reveal that section, then hold
 Command and drag the mark out of it once; it stays where you put it.
 
-| | |
-|---|---|
-| `yap run` | The daemon, in the foreground. The default. |
-| `yap start` / `yap stop` | Start or stop the background daemon. |
-| `yap record` | Record one session now, then transcribe it. |
-| `yap models list` | The models, and which ones you have. |
-| `yap models download <id>` | Fetch one early. |
-| `yap doctor` | Permissions, key mapping, model, login item. |
-| `yap setup` | Permissions and the model, in one go. |
-| `yap install` | Add or remove the login item. |
-| `yap bench --audio FILE` | Time it on your own audio. |
-| `yap --version` | Print the version. |
+There is one command, and it is not needed for anything you do day to day:
+
+```sh
+/Applications/yap.app/Contents/MacOS/yap bench --audio FILE
+```
+
+It times transcription on your own audio. `--version` prints the version.
 
 ## Configuration
 
-`~/.config/yap/config.json`. Every key is optional and a flag beats the file.
-The Settings window is a GUI over this exact file — there is no second store —
-and "Open Config File" in it opens the JSON, filled in with the defaults. An
-upgrade adds a line for anything new, so the file always lists what this yap
-can do. Your own values are never touched.
+`~/.config/yap/config.json`. Every key is optional, and this file is the only
+store there is. The Settings window is a GUI over it — nothing is kept anywhere
+else — and "Open Config File" in it opens the JSON, filled in with the
+defaults. An upgrade adds a line for anything new, so the file always lists
+what this yap can do. Your own values are never touched.
 
 ```json
 {
@@ -105,8 +107,16 @@ can do. Your own values are never touched.
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 `mute_output`, `newline_after_release`, `meeting_detection`,
-`meeting_auto_record` and `meeting_excluded_apps` all change on the spot. A new
-`model` or `recordings_dir` wants a restart, and yap says so when it sees one.
+`meeting_auto_record` and `meeting_excluded_apps` all change on the spot. A
+new `model` or `recordings_dir` wants a restart, and yap says so when it sees
+one.
+
+`hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
+`rightControl`, `rightShift`, `leftOption`, `leftControl`, `leftShift` — or a
+chord like `cmd+shift+space`, or a lone function key like `f5`. The recorder in
+Settings → Dictation writes it for you; typing it by hand is case-insensitive
+and ignores `-` and `_`. A chord is swallowed while yap holds it, so the app
+underneath never sees it.
 
 `newline_after_release` hits Return once the text is in, which is what you want
 for chat boxes.
@@ -153,8 +163,7 @@ and updates its metadata and heading. Turn it off to use yap as a plain
 recorder: `on_stop` then fires when the recording stops rather than after the
 transcript. Nothing is lost either way. Turn it back on, restart, and yap works
 through every session under `recordings_dir` that has no transcript yet, firing
-`on_stop` again for each. Anything you put somewhere else with
-`yap record --out` is left alone.
+`on_stop` again for each.
 
 ## Models
 
@@ -185,15 +194,14 @@ own, and that is a single device read a second.
 ## Uninstall
 
 ```sh
-yap install --uninstall
 brew uninstall --zap --cask yap
 ```
 
-The login item is yap's rather than the cask's, so the first line is what
-takes it away. Skip it and `brew uninstall` on its own leaves launchd trying
-to start a binary that is no longer there. `--zap` also clears the config file
-and the logs. Your recordings are never touched, and neither are the models,
-which are shared with anything else built on FluidAudio.
+`--zap` takes the login item away with it, along with the config file and the
+logs. Installed from the .dmg instead, drag yap out of Applications and delete
+`~/Library/LaunchAgents/com.terrifiedbug.yap.plist`. Your recordings are never
+touched, and neither are the models, which are shared with anything else built
+on FluidAudio.
 
 ## Requirements
 

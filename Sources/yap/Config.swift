@@ -79,6 +79,7 @@ enum Config {
         load()?["meeting_excluded_apps"] as? [String] ?? []
     }
 
+
     /// Apple voice processing (acoustic echo cancellation) on the mic, so
     /// speaker playback doesn't bleed into the mic track and get transcribed
     /// as "me". Default on: the mic track always pairs with a system track, so
@@ -99,7 +100,8 @@ enum Config {
         return id
     }
 
-    /// Push-to-talk key name, matching `HotkeyMonitor.Key`.
+    /// Push-to-talk binding, as `HotkeyBinding` serializes it: a modifier
+    /// name like `fn`, a chord like `cmd+shift+space`, or a lone function key.
     static func hotkey() -> String? {
         guard let key = section("dictation")?["hotkey"] as? String, !key.isEmpty else { return nil }
         return key
@@ -160,15 +162,9 @@ enum Config {
         return json
     }
 
-    /// Resolve the recordings root from an optional CLI override.
-    static func resolveRoot(cliOverride: String?) -> URL {
-        if let cliOverride {
-            return URL(
-                fileURLWithPath: (cliOverride as NSString).expandingTildeInPath,
-                isDirectory: true
-            )
-        }
-        return recordingsDir() ?? defaultRoot
+    /// Where recorded sessions land.
+    static func resolveRoot() -> URL {
+        recordingsDir() ?? defaultRoot
     }
 
     // MARK: - File

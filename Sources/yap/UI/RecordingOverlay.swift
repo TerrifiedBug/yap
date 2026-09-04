@@ -14,6 +14,14 @@ final class RecordingOverlay {
     private var window: NSPanel?
     private let model = OverlayModel()
 
+    /// The panel and its hosting view are built now rather than on the first
+    /// press. It is a few milliseconds of NSPanel and NSHostingView setup, and
+    /// the first press is the one place in yap where milliseconds are visible.
+    /// It stays ordered out until `show`, so nothing is on screen.
+    init() {
+        ensureWindow()
+    }
+
     func show(_ state: State) {
         ensureWindow()
         if state == .recording {

@@ -3,21 +3,59 @@ import SwiftUI
 
 // MARK: - Panes
 
+struct GeneralPane: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Launch at login", isOn: $model.launchAtLogin)
+            } footer: {
+                Text("Starts yap automatically at your next login.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Section("Updates") {
+                LabeledContent("Version") { Text(model.version) }
+                HStack(spacing: 8) {
+                    Text(model.updateStatus)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    Button("Check Now") { model.checkForUpdates() }
+                }
+            }
+            Section {
+                Button("Show Logs in Finder") { model.showLogs() }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
 struct DictationPane: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
         Form {
             Section {
-                Picker("Hotkey", selection: $model.hotkey) {
-                    ForEach(HotkeyMonitor.Key.allCases, id: \.self) { key in
-                        Text(SettingsModel.label(for: key)).tag(key.rawValue)
+                LabeledContent("Hotkey") {
+                    HStack(spacing: 8) {
+                        HotkeyRecorder(value: $model.hotkey)
+                            .frame(width: 150, height: 24)
+                        Button("Reset to Fn") { model.hotkey = HotkeyBinding.fn.serialized }
+                            .buttonStyle(.link)
                     }
                 }
                 Toggle("Tap to toggle", isOn: $model.tapToToggle)
                 Toggle("Show recording pill", isOn: $model.overlay)
                 Toggle("Press Return after dictating", isOn: $model.newlineAfterRelease)
                 Toggle("Mute speakers while dictating", isOn: $model.muteOutput)
+            } footer: {
+                Text("Click the field, then hold the key or chord you want.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Picker("Model", selection: $model.model) {

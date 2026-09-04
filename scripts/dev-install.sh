@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 #
-# Build the current tree and install it over /usr/local/bin/yap, signed with a
-# real identity so the Accessibility grant survives.
+# Build the current tree into /Applications/yap.app, signed with a real
+# identity so the Accessibility grant survives.
 #
-# This is the loop for testing a change on this machine. scripts/build-release.sh
-# is the other one: it builds the .app, notarizes and packages a .dmg for other
-# people. Nothing here is distributable.
+# This is the loop for testing a change on this machine. It runs the same
+# scripts/build-release.sh that CI runs, with notarization skipped — building
+# the bundle rather than a bare binary is the point, because the bundle is
+# what the product is and what TCC and LaunchServices see.
 #
-# The signing is the point. An adhoc-signed binary gives TCC nothing stable to
-# key on, so it falls back to the code hash, and every rebuild invalidates the
-# Accessibility grant while System Settings still shows the row ticked. Signed
-# with a Developer ID, the grant follows the identity and survives rebuilds.
+# The signing is the other half. An adhoc-signed build gives TCC nothing
+# stable to key on, so it falls back to the code hash and every rebuild
+# invalidates the Accessibility grant while System Settings still shows the
+# row ticked. Signed with a Developer ID, the grant follows the identity.
 #
 #   APP_IDENTITY  signing identity. Auto-detected when exactly one Developer ID
 #                 Application certificate exists; required otherwise.
@@ -19,7 +20,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-BIN=".build/arm64-apple-macosx/release/yap"
 LABEL="com.terrifiedbug.yap"
 # Same variable name as build-release.sh, so one export covers both. Resolved
 # automatically only when the choice is unambiguous: silently picking the
@@ -53,85 +53,38 @@ fi
 
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$1"; }
 
-step "Building"
-swift build -c release --arch arm64
+VERSION=$(sed -n 's/.*version: "\(.*\)".*/\1/p' Sources/yap/Yap.swift)
+[[ -n "$VERSION" ]] || { echo "couldn't read the version from Sources/yap/Yap.swift" >&2; exit 1; }
 
-step "Signing"
-# --timestamp=none: a secure timestamp needs a round trip to Apple and only
-# matters for distribution. Local installs are rebuilt constantly.
-codesign --force --options runtime --timestamp=none \
-  --entitlements packaging/yap.entitlements \
-  --sign "$APP_IDENTITY" "$BIN"
-echo "signed: $APP_IDENTITY"
+step "Building yap.app $VERSION"
+SKIP_NOTARIZE=1 VERSION="$VERSION" APP_IDENTITY="$APP_IDENTITY" ./scripts/build-release.sh
 
-step "Installing"
-LOG="$HOME/Library/Logs/yap/yap.err.log"
-# Only read what this run appends; the log outlives many installs.
-offset=$(stat -f%z "$LOG" 2>/dev/null || echo 0)
-
-sudo install -m 755 "$BIN" /usr/local/bin/yap
-/usr/local/bin/yap install --launch-at-login
-
-# `install --launch-at-login` reports that it wrote and bootstrapped the agent,
-# which is not the same as the agent being usable: it exits 0 when
-# Accessibility is missing, precisely so KeepAlive does not relaunch it
-# forever. Check rather than claim.
-#
-# A PID is not the check either. On a cold model cache the daemon downloads
-# several hundred megabytes and compiles for the ANE before it ever touches
-# Accessibility, so it has a PID for minutes and then exits. Waiting on the
-# line it prints when the hotkey tap is actually live is the only signal that
-# means what it says.
-step "Waiting for it to come up"
-
-running() { launchctl list "$LABEL" 2>/dev/null | grep -q '"PID" ='; }
-ready() { tail -c "+$((offset + 1))" "$LOG" 2>/dev/null | grep -q 'listening on'; }
-
-echo "(first run downloads the model — this can take a few minutes)"
-deadline=$((SECONDS + 600))
-while [ "$SECONDS" -lt "$deadline" ]; do
-  if ready; then
-    echo "✓ running"
-    exit 0
-  fi
-  running || break
-  sleep 2
-done
-
-if ready; then
-  echo "✓ running"
-  exit 0
+# A binary left at /usr/local/bin by an older yap is not merely stale: it is a
+# second copy under a different code identity, and whichever one launchd runs
+# is the one that owns the Accessibility grant. One binary, one identity.
+if [[ -e /usr/local/bin/yap ]]; then
+  step "Removing the stale /usr/local/bin/yap"
+  echo "it predates the GUI-first layout and splits the TCC identity in two."
+  sudo rm -f /usr/local/bin/yap
 fi
 
-# Almost always the one-time grant. Changing the signing identity — including
-# the first time this script signs what used to be adhoc — gives TCC a new
-# identity to key on, so the old row is dead even though it still looks ticked.
-#
-# The daemon has already exited by now, and exits 0 so KeepAlive leaves it
-# alone. Granting therefore fixes nothing on its own: something has to start it
-# again afterwards. That is the whole reason this does not just print and quit.
-echo "not running yet — it starts, finds no Accessibility grant, and exits."
-echo
-echo "  1. remove any stale 'yap' row, then add:  /usr/local/bin/yap"
-echo "  2. come back here and press Return"
-echo
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
-read -r _
+step "Installing to /Applications"
+# ditto rather than cp -R: it preserves the signature's extended attributes.
+rm -rf /Applications/yap.app
+ditto dist/yap.app /Applications/yap.app
 
-step "Starting it again"
-offset=$(stat -f%z "$LOG" 2>/dev/null || echo 0)
-launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
-deadline=$((SECONDS + 120))
-while [ "$SECONDS" -lt "$deadline" ]; do
-  ready && break
-  running || break
-  sleep 2
-done
-if ready; then
-  echo "✓ running"
+step "Starting it"
+if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+  # Under launchd already: replace the job's image in place, so the login item
+  # keeps pointing at the same place and a recording in flight is finalized by
+  # the SIGTERM that -k sends.
+  launchctl kickstart -k "gui/$(id -u)/$LABEL"
+  echo "kickstarted the login agent"
 else
-  echo "✗ still not running. The reason is in the log:" >&2
-  echo "  tail ~/Library/Logs/yap/yap.err.log" >&2
-  echo "  /usr/local/bin/yap doctor" >&2
-  exit 1
+  open -n /Applications/yap.app
+  echo "launched /Applications/yap.app"
 fi
+
+echo
+echo "The menu bar mark should be up within a second, and will say what it"
+echo "still needs. Logs: $HOME/Library/Logs/yap/yap.err.log"

@@ -10,10 +10,10 @@ import Foundation
 ///
 /// The daemon hands us the transcriber it already holds for dictation, so a
 /// meeting transcribes on the same loaded model the hotkey uses — no second
-/// load, no second copy in memory. A coordinator handed nothing (`yap record`
-/// as a one-shot) resolves and loads its own, and releases it when the queue
-/// drains; an injected one is never released, because the whole point of the
-/// dictation daemon is that the next key press is instant.
+/// load, no second copy in memory. A coordinator handed nothing resolves and
+/// loads its own, and releases it when the queue drains; an injected one is
+/// never released, because the whole point of the dictation daemon is that
+/// the next key press is instant.
 actor TranscriptionCoordinator {
     private var queue: [URL] = []
     private var drainTask: Task<Void, Never>?
@@ -43,7 +43,7 @@ actor TranscriptionCoordinator {
     }
 
     /// Called with the session directory after transcript.json/.md are written.
-    /// Unset (the one-shot `yap record` case), a plain notification fires instead.
+    /// Unset, a plain notification fires instead.
     func setTranscriptReadyHandler(_ handler: @escaping @Sendable (URL) -> Void) {
         transcriptReadyHandler = handler
     }
@@ -55,64 +55,13 @@ actor TranscriptionCoordinator {
             runHook(for: sessionDir)
             return
         }
-        // Only decline on a model we can positively identify as unable. An
-        // unrecognised id is a different fault, and the existing transcribe
-        // path reports it far more accurately than this would.
-        if let model = sessionModel(), !model.supportsSessions {
-            refuseSession(sessionDir, model: model)
-            return
-        }
         queue.append(sessionDir)
         drainIfIdle()
     }
 
-    /// The model this session would actually transcribe on.
-    ///
-    /// The daemon's resident transcriber wins over config: it is the thing
-    /// that will do the work, and config can be edited after it was loaded.
-    /// Only a coordinator that owns nothing yet has to ask config.
-    private func sessionModel() -> TranscriptionModel? {
-        if let transcriber { return ModelRegistry.find(transcriber.modelID) }
-        return Self.resolveModel()
-    }
-
-    /// Leave the recording alone rather than transcribe it wrongly.
-    ///
-    /// Not a throw: a model that cannot emit timings fails every track, so
-    /// `allTracksFailed` would fire, no transcript.json would be written, and
-    /// `resumePending` would requeue the session at every launch forever.
-    /// Declining up front keeps the audio and the reason on disk instead.
-    ///
-    /// A session under the configured recordings root does get picked up by
-    /// `resumePending` on a later launch with a capable model. One written
-    /// elsewhere by `yap record --out` does not — nothing rescans that path,
-    /// and there is no command to transcribe an existing folder. So the
-    /// message promises the audio and not the transcript.
-    ///
-    /// Deliberately no `on_stop`. The hook means "this session is finished",
-    /// and this one is not: firing now would hand the hook a folder with no
-    /// transcript, and fire a second time when a later launch on a capable
-    /// model transcribes it. Disabled transcription is the case where firing
-    /// is right — a recorder with no transcriber has nothing else to announce
-    /// — and it accepts the second fire if the setting is turned back on.
-    private func refuseSession(_ dir: URL, model: TranscriptionModel) {
-        let reason = "\(model.id) cannot produce the timed segments a session needs"
-        log(dir, "not transcribed: \(reason)")
-        // Also on stderr: `yap record` has just printed "transcribing...", and
-        // exiting quietly after that reads as success. The recording itself did
-        // succeed, so this is not a failure exit — but the terminal has to say
-        // that no transcript was written, and where the audio went.
-        let notice = "not transcribed: \(reason)\n  the recording is kept at \(dir.path)"
-        warn(notice)
-        notifyUser(
-            title: "yap — session not transcribed",
-            body: "\(model.id) cannot transcribe recordings — see transcribe.log"
-        )
-    }
-
-    /// Queue a session and return only once the queue is empty. `yap record`
-    /// has nothing left to do but wait for its own transcript, and must not
-    /// exit before the file exists.
+    /// Queue a session and return only once the queue is empty, for a caller
+    /// that owns the coordinator and has nothing left to do but wait for the
+    /// transcript.
     func transcribeNow(_ sessionDir: URL) async {
         enqueue(sessionDir)
         await waitUntilDrained()
@@ -128,10 +77,6 @@ actor TranscriptionCoordinator {
     /// oldest-first is a name sort.
     func resumePending(root: URL) {
         guard Config.transcriptionEnabled() else { return }
-        // A backlog waits for a model that can transcribe it rather than being
-        // burned through on one that cannot. Nothing is lost — the sessions
-        // stay pending, and a later launch on a capable model picks them up.
-        if let model = sessionModel(), !model.supportsSessions { return }
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil
         ) else { return }
@@ -268,13 +213,10 @@ actor TranscriptionCoordinator {
     }
 
     /// Sessions transcribe on the model dictation uses. One model id in
-    /// config, one model on disk, one model in memory.
+    /// config, one model on disk, one model in memory — so this is the same
+    /// resolution the daemon booted with, warning and all.
     private static func resolveModel() -> TranscriptionModel? {
-        if let id = Config.dictationModel() {
-            if let model = ModelRegistry.find(id) { return model }
-            warn("warning: unknown model \"\(id)\" — using the recommended one")
-        }
-        return ModelRegistry.recommended()
+        try? Resolve.model()
     }
 
     /// Fires the configured on_stop shell command with the session directory

@@ -23,6 +23,15 @@ final class SettingsModel: ObservableObject {
         let installed: Bool
     }
 
+    /// The login item, which is a file rather than a config key — so unlike
+    /// every other control here, this one can fail. It reverts on failure
+    /// rather than showing a state the disk does not agree with.
+    @Published var launchAtLogin: Bool { didSet { applyLaunchAtLogin() } }
+    /// Live: the updater pushes every state change here while the window is
+    /// open, so "Check Now" reads as something happening.
+    @Published var updateStatus: String
+    let version = Yap.configuration.version ?? "unknown"
+
     @Published var hotkey: String { didSet { writeDictation("hotkey", hotkey) } }
     @Published var tapToToggle: Bool { didSet { writeDictation("tap_to_toggle", tapToToggle) } }
     @Published var overlay: Bool { didSet { writeDictation("overlay", overlay) } }
@@ -53,10 +62,16 @@ final class SettingsModel: ObservableObject {
     /// Suppresses the write-through while `init` fills the properties in.
     private var loading = true
     private var onStopWrite: Task<Void, Never>?
+    /// Set while `applyLaunchAtLogin` puts the toggle back after a failure,
+    /// so the reassignment does not re-enter the setter.
+    private var applyingLaunchAtLogin = false
+    private var updateObserver: UUID?
 
     init() {
-        hotkey = HotkeyMonitor.Key(name: Config.hotkey() ?? "")?.rawValue
-            ?? HotkeyMonitor.Key.fn.rawValue
+        launchAtLogin = LaunchAgent.isInstalled
+        updateStatus = Updater.shared.state.description
+        hotkey = HotkeyBinding(parsing: Config.hotkey() ?? "")?.serialized
+            ?? HotkeyBinding.fn.serialized
         tapToToggle = Config.tapToToggle()
         overlay = Config.overlayEnabled()
         newlineAfterRelease = Config.newlineAfterRelease()
@@ -71,6 +86,16 @@ final class SettingsModel: ObservableObject {
         meetingAutoRecord = Config.meetingAutoRecord()
         excludedApps = Config.meetingExcludedApps().map(Self.resolve)
         loading = false
+        updateObserver = Updater.shared.observe { [weak self] state in
+            self?.updateStatus = state.description
+        }
+    }
+
+    deinit {
+        // The window builds a fresh model on every open, so an unremoved
+        // observer would accumulate one dead closure per visit.
+        guard let updateObserver else { return }
+        MainActor.assumeIsolated { Updater.shared.unobserve(updateObserver) }
     }
 
     // MARK: actions
@@ -117,14 +142,41 @@ final class SettingsModel: ObservableObject {
         NSWorkspace.shared.open(Config.path)
     }
 
-    static func label(for key: HotkeyMonitor.Key) -> String {
-        switch key {
-        case .fn: return "Fn (Globe)"
-        case .rightOption: return "Right Option ⌥"
-        case .rightCommand: return "Right Command ⌘"
-        case .rightControl: return "Right Control ⌃"
-        case .rightShift: return "Right Shift ⇧"
+    func checkForUpdates() {
+        Updater.shared.checkNow()
+    }
+
+    /// Reveals the log rather than opening it: these are append-only files a
+    /// daemon writes to for weeks, and Console or a tail is a better reader
+    /// than whatever owns .log. Creates them first — run in the foreground
+    /// with no login item, neither file exists and Finder would open on
+    /// nothing.
+    func showLogs() {
+        Paths.restrictLogPermissions()
+        NSWorkspace.shared.activateFileViewerSelecting([Paths.stderrLog])
+    }
+
+    private func applyLaunchAtLogin() {
+        guard !loading, !applyingLaunchAtLogin else { return }
+        do {
+            if launchAtLogin {
+                try LaunchAgent.install()
+            } else {
+                try LaunchAgent.uninstall()
+            }
+        } catch {
+            warn("couldn't \(launchAtLogin ? "install" : "remove") the login item: \(error)")
+            applyingLaunchAtLogin = true
+            launchAtLogin = !launchAtLogin
+            applyingLaunchAtLogin = false
         }
+    }
+
+    /// The binding as a person reads it, for the recorder field. Falls back to
+    /// the raw string so a hand-edited config that does not parse still shows
+    /// what it says rather than a lie.
+    var hotkeyDisplay: String {
+        HotkeyBinding(parsing: hotkey)?.displayName ?? hotkey
     }
 
     // MARK: writing

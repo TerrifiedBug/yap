@@ -39,11 +39,15 @@ func showToast(
     button: String,
     secondaryButton: String? = nil,
     onSecondary: (@MainActor () -> Void)? = nil,
+    destructiveButton: String? = nil,
+    onDestructive: (@MainActor () -> Void)? = nil,
     onAccept: @escaping @MainActor () -> Void
 ) {
     PromptPanel.presentToast(
         title: title, body: body, button: button,
-        secondaryButton: secondaryButton, onSecondary: onSecondary, onAccept: onAccept
+        secondaryButton: secondaryButton, onSecondary: onSecondary,
+        destructiveButton: destructiveButton, onDestructive: onDestructive,
+        onAccept: onAccept
     )
 }
 
@@ -89,10 +93,13 @@ final class PromptPanel: NSPanel {
     private let onAccept: @MainActor () -> Void
     private let onDismiss: @MainActor () -> Void
     private let onSecondary: (@MainActor () -> Void)?
+    private let onDestructive: (@MainActor () -> Void)?
     private let onNameSubmit: (@MainActor (String) -> Void)?
     private var nameField: NSTextField?
     private var autoDismiss: Timer?
     private let dismissAfter: TimeInterval
+    /// Whether a button has already been clicked. See `claimAnswer`.
+    private var answered = false
 
     static func present(
         title: String,
@@ -109,6 +116,7 @@ final class PromptPanel: NSPanel {
         let panel = PromptPanel(
             heading: title, body: body, button: button,
             secondaryButton: secondaryButton, onSecondary: onSecondary,
+            destructiveButton: nil, onDestructive: nil,
             namePrefill: nil, onNameSubmit: nil,
             onDismiss: onDismiss, onAccept: onAccept, toast: false
         )
@@ -126,6 +134,7 @@ final class PromptPanel: NSPanel {
         let panel = PromptPanel(
             heading: title, body: nil, button: "Save",
             secondaryButton: nil, onSecondary: nil,
+            destructiveButton: nil, onDestructive: nil,
             namePrefill: prefill, onNameSubmit: onSubmit,
             onDismiss: {}, onAccept: {}, toast: false
         )
@@ -145,6 +154,8 @@ final class PromptPanel: NSPanel {
         button: String,
         secondaryButton: String?,
         onSecondary: (@MainActor () -> Void)?,
+        destructiveButton: String?,
+        onDestructive: (@MainActor () -> Void)?,
         onAccept: @escaping @MainActor () -> Void
     ) {
         // A live prompt is a question; never cover it with an announcement.
@@ -157,6 +168,7 @@ final class PromptPanel: NSPanel {
         let panel = PromptPanel(
             heading: title, body: body, button: button,
             secondaryButton: secondaryButton, onSecondary: onSecondary,
+            destructiveButton: destructiveButton, onDestructive: onDestructive,
             namePrefill: nil, onNameSubmit: nil,
             onDismiss: {}, onAccept: onAccept, toast: true
         )
@@ -171,6 +183,8 @@ final class PromptPanel: NSPanel {
         button: String,
         secondaryButton: String?,
         onSecondary: (@MainActor () -> Void)?,
+        destructiveButton: String?,
+        onDestructive: (@MainActor () -> Void)?,
         namePrefill: String?,
         onNameSubmit: (@MainActor (String) -> Void)?,
         onDismiss: @escaping @MainActor () -> Void,
@@ -180,6 +194,7 @@ final class PromptPanel: NSPanel {
         self.onAccept = onAccept
         self.onDismiss = onDismiss
         self.onSecondary = onSecondary
+        self.onDestructive = onDestructive
         self.onNameSubmit = onNameSubmit
         self.dismissAfter = toast ? Self.toastDismissAfter : Self.autoDismissAfter
         super.init(
@@ -220,7 +235,8 @@ final class PromptPanel: NSPanel {
         }
         let content = contentStack(
             heading: heading, body: body, button: button,
-            secondaryButton: secondaryButton, toast: toast
+            secondaryButton: secondaryButton, destructiveButton: destructiveButton,
+            toast: toast
         )
         let background = PillView()
         background.material = .hudWindow
@@ -249,6 +265,7 @@ final class PromptPanel: NSPanel {
         body: String?,
         button: String,
         secondaryButton: String?,
+        destructiveButton: String?,
         toast: Bool
     ) -> NSStackView {
         var textViews: [NSView] = [
@@ -284,6 +301,18 @@ final class PromptPanel: NSPanel {
                     textColor: .labelColor,
                     target: self,
                     action: #selector(dismissClicked)
+                ))
+        }
+        // Left of the other two, and the only red thing in the pill: it is
+        // the one button here that cannot be undone by clicking again.
+        if let destructiveButton {
+            views.append(
+                CapsuleButton(
+                    title: destructiveButton,
+                    fill: NSColor.labelColor.withAlphaComponent(0.10),
+                    textColor: .systemRed,
+                    target: self,
+                    action: #selector(destructiveClicked)
                 ))
         }
         if let secondaryButton {
@@ -409,20 +438,43 @@ final class PromptPanel: NSPanel {
         super.close()
     }
 
+    /// A panel answers once.
+    ///
+    /// The fade takes 160 ms and every button stays live and clickable for
+    /// all of it, so a double-click ran the action twice: two "Deleted"
+    /// toasts, and a second `trashItem` failing on a folder that was already
+    /// in the Trash — reported to the user as an error they did not cause.
+    /// Claimed synchronously, in the click, because that is the only point
+    /// before the fade where the two clicks are still distinguishable.
+    private func claimAnswer() -> Bool {
+        guard !answered else { return false }
+        answered = true
+        return true
+    }
+
     @objc private func dismissClicked() {
+        guard claimAnswer() else { return }
         let dismiss = onDismiss
         fadeOut()
         dismiss()
     }
 
     @objc private func acceptClicked() {
+        guard claimAnswer() else { return }
         let accept = onAccept
         fadeOut()
         accept()
     }
 
+    @objc private func destructiveClicked() {
+        guard let destructive = onDestructive, claimAnswer() else { return }
+        fadeOut {
+            destructive()
+        }
+    }
+
     @objc private func secondaryClicked() {
-        guard let secondary = onSecondary else { return }
+        guard let secondary = onSecondary, claimAnswer() else { return }
         // Wait until the toast has closed before replacing it with the field.
         // This also keeps the originating mouse-up away from the Save button.
         fadeOut {
@@ -431,7 +483,7 @@ final class PromptPanel: NSPanel {
     }
 
     @objc private func saveClicked(_ sender: Any?) {
-        guard let field = nameField, let submit = onNameSubmit else { return }
+        guard let field = nameField, let submit = onNameSubmit, claimAnswer() else { return }
         let value = field.stringValue
         // `showToast` only presents while no question occupies the prompt slot.
         fadeOut {
