@@ -98,6 +98,8 @@ final class PromptPanel: NSPanel {
     private var nameField: NSTextField?
     private var autoDismiss: Timer?
     private let dismissAfter: TimeInterval
+    /// Whether a button has already been clicked. See `claimAnswer`.
+    private var answered = false
 
     static func present(
         title: String,
@@ -436,27 +438,43 @@ final class PromptPanel: NSPanel {
         super.close()
     }
 
+    /// A panel answers once.
+    ///
+    /// The fade takes 160 ms and every button stays live and clickable for
+    /// all of it, so a double-click ran the action twice: two "Deleted"
+    /// toasts, and a second `trashItem` failing on a folder that was already
+    /// in the Trash — reported to the user as an error they did not cause.
+    /// Claimed synchronously, in the click, because that is the only point
+    /// before the fade where the two clicks are still distinguishable.
+    private func claimAnswer() -> Bool {
+        guard !answered else { return false }
+        answered = true
+        return true
+    }
+
     @objc private func dismissClicked() {
+        guard claimAnswer() else { return }
         let dismiss = onDismiss
         fadeOut()
         dismiss()
     }
 
     @objc private func acceptClicked() {
+        guard claimAnswer() else { return }
         let accept = onAccept
         fadeOut()
         accept()
     }
 
     @objc private func destructiveClicked() {
-        guard let destructive = onDestructive else { return }
+        guard let destructive = onDestructive, claimAnswer() else { return }
         fadeOut {
             destructive()
         }
     }
 
     @objc private func secondaryClicked() {
-        guard let secondary = onSecondary else { return }
+        guard let secondary = onSecondary, claimAnswer() else { return }
         // Wait until the toast has closed before replacing it with the field.
         // This also keeps the originating mouse-up away from the Save button.
         fadeOut {
@@ -465,7 +483,7 @@ final class PromptPanel: NSPanel {
     }
 
     @objc private func saveClicked(_ sender: Any?) {
-        guard let field = nameField, let submit = onNameSubmit else { return }
+        guard let field = nameField, let submit = onNameSubmit, claimAnswer() else { return }
         let value = field.stringValue
         // `showToast` only presents while no question occupies the prompt slot.
         fadeOut {
