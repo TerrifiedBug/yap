@@ -51,7 +51,7 @@ final class HotkeyMonitorTests: XCTestCase {
     /// A left-Shift binding must not fire on right Shift. Only the
     /// device-specific bit tells them apart.
     func testSidedModifiersDoNotCrossFire() {
-        let leftShift = HotkeyBinding(parsing: "leftshift")!
+        let leftShift = HotkeyBinding(parsing: "leftShift")!
         let monitor = HotkeyMonitor(binding: leftShift)
         let right = CGEventFlags(rawValue: 0x0000_0004).union(.maskShift)
         XCTAssertNil(monitor.classify(type: .flagsChanged, event: flagsEvent(right)).edge)

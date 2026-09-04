@@ -42,9 +42,9 @@ enum HotkeyBinding: Equatable {
     init?(parsing text: String) {
         let normalized = Self.normalize(text)
         guard !normalized.isEmpty else { return nil }
-        // A bare modifier name first: "fn" and "rightshift" are not chords,
-        // and they are what every config written before this existed says.
-        if let mask = Self.modifierMasks[normalized] {
+        // A bare modifier name first: "fn" and "rightShift" are not chords,
+        // and they are what a config file says.
+        if let mask = Self.modifierMask(named: normalized) {
             self = .modifier(mask)
             return
         }
@@ -120,28 +120,41 @@ enum HotkeyBinding: Equatable {
     /// constant; the sided ones are the only way to tell right Shift from left
     /// Shift at this level, because `.maskShift` is set by both.
     ///
+    /// These spellings are the ones already in people's config files —
+    /// `HotkeyMonitor.Key` was a `String` enum and the Settings window wrote
+    /// its `rawValue` — so they stay exactly as they were. Renaming them would
+    /// have been a silent data migration for the sake of tidier casing, and
+    /// every hotkey it failed to migrate would come back as Fn.
+    ///
     /// Left Command is deliberately absent. Too much of macOS begins with it,
     /// and a dictation press that starts every ⌘-anything is a trap.
     static let modifierMasks: [String: CGEventFlags] = [
         "fn": .maskSecondaryFn,
-        "rightoption": CGEventFlags(rawValue: 0x0000_0040),
-        "rightcommand": CGEventFlags(rawValue: 0x0000_0010),
-        "rightcontrol": CGEventFlags(rawValue: 0x0000_2000),
-        "rightshift": CGEventFlags(rawValue: 0x0000_0004),
-        "leftoption": CGEventFlags(rawValue: 0x0000_0020),
-        "leftcontrol": CGEventFlags(rawValue: 0x0000_0001),
-        "leftshift": CGEventFlags(rawValue: 0x0000_0002),
+        "rightOption": CGEventFlags(rawValue: 0x0000_0040),
+        "rightCommand": CGEventFlags(rawValue: 0x0000_0010),
+        "rightControl": CGEventFlags(rawValue: 0x0000_2000),
+        "rightShift": CGEventFlags(rawValue: 0x0000_0004),
+        "leftOption": CGEventFlags(rawValue: 0x0000_0020),
+        "leftControl": CGEventFlags(rawValue: 0x0000_0001),
+        "leftShift": CGEventFlags(rawValue: 0x0000_0002),
     ]
+
+    /// Lookup by the normalized form, so a name typed into the file by hand
+    /// finds its mask whatever case and separators it was written with —
+    /// exactly what `HotkeyMonitor.Key.init(name:)` always did.
+    static func modifierMask(named normalized: String) -> CGEventFlags? {
+        modifierMasks.first { normalize($0.key) == normalized }?.value
+    }
 
     private static let modifierLabels: [String: String] = [
         "fn": "Fn",
-        "rightoption": "Right ⌥",
-        "rightcommand": "Right ⌘",
-        "rightcontrol": "Right ⌃",
-        "rightshift": "Right ⇧",
-        "leftoption": "Left ⌥",
-        "leftcontrol": "Left ⌃",
-        "leftshift": "Left ⇧",
+        "rightOption": "Right ⌥",
+        "rightCommand": "Right ⌘",
+        "rightControl": "Right ⌃",
+        "rightShift": "Right ⇧",
+        "leftOption": "Left ⌥",
+        "leftControl": "Left ⌃",
+        "leftShift": "Left ⇧",
     ]
 
     /// Device-independent bits, for chords. A chord does not care which Shift.

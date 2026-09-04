@@ -18,21 +18,18 @@ final class HotkeyBindingTests: XCTestCase {
     }
 
     func testModifierNamesRoundTrip() {
-        for name in ["fn", "rightoption", "rightcommand", "rightcontrol", "rightshift",
-                     "leftoption", "leftcontrol", "leftshift"] {
+        for name in ["fn", "rightOption", "rightCommand", "rightControl", "rightShift",
+                     "leftOption", "leftControl", "leftShift"] {
             roundTrip(name)
         }
     }
 
-    /// Parsing ignores case and separators, so a hand-edited config saying
-    /// `rightOption` or `RIGHT_OPTION` lands on the same binding the recorder
-    /// writes as `rightoption`. Not a legacy path — the recorder has only ever
-    /// written the canonical form — just a file people edit by hand.
+    /// Parsing ignores case and separators, the way it always has, so a name
+    /// typed into the file by hand finds its binding however it was written.
     func testParsingIgnoresCaseAndSeparators() {
-        XCTAssertEqual(HotkeyBinding(parsing: "rightOption"), HotkeyBinding(parsing: "rightoption"))
-        XCTAssertEqual(HotkeyBinding(parsing: "RIGHT_SHIFT"), HotkeyBinding(parsing: "rightshift"))
-        XCTAssertEqual(HotkeyBinding(parsing: "right-control")?.serialized, "rightcontrol")
-        XCTAssertEqual(HotkeyBinding(parsing: "fn"), .fn)
+        XCTAssertEqual(HotkeyBinding(parsing: "RIGHT_SHIFT"), HotkeyBinding(parsing: "rightShift"))
+        XCTAssertEqual(HotkeyBinding(parsing: "right-control")?.serialized, "rightControl")
+        XCTAssertEqual(HotkeyBinding(parsing: "FN"), .fn)
     }
 
     func testChordsRoundTrip() {
@@ -83,7 +80,7 @@ final class HotkeyBindingTests: XCTestCase {
 
     func testDisplayNames() {
         XCTAssertEqual(HotkeyBinding(parsing: "fn")?.displayName, "Fn")
-        XCTAssertEqual(HotkeyBinding(parsing: "rightoption")?.displayName, "Right ⌥")
+        XCTAssertEqual(HotkeyBinding(parsing: "rightOption")?.displayName, "Right ⌥")
         XCTAssertEqual(HotkeyBinding(parsing: "cmd+shift+space")?.displayName, "⌘⇧Space")
         XCTAssertEqual(HotkeyBinding(parsing: "f5")?.displayName, "F5")
         XCTAssertEqual(HotkeyBinding(parsing: "ctrl+opt+d")?.displayName, "⌃⌥D")
@@ -99,7 +96,7 @@ final class HotkeyBindingTests: XCTestCase {
     func testUsesFnCoversBothShapes() {
         XCTAssertTrue(HotkeyBinding.fn.usesFn)
         XCTAssertTrue(HotkeyBinding(parsing: "fn+space")?.usesFn ?? false)
-        XCTAssertFalse(HotkeyBinding(parsing: "rightshift")?.usesFn ?? true)
+        XCTAssertFalse(HotkeyBinding(parsing: "rightShift")?.usesFn ?? true)
         XCTAssertFalse(HotkeyBinding(parsing: "cmd+shift+space")?.usesFn ?? true)
     }
 }

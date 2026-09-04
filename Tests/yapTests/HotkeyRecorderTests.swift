@@ -57,7 +57,7 @@ final class HotkeyRecorderTests: XCTestCase {
         XCTAssertEqual(written(), [])
 
         view.flagsChanged(with: flagsEvent([]))
-        XCTAssertEqual(written(), ["rightoption"])
+        XCTAssertEqual(written(), ["rightOption"])
         XCTAssertFalse(view.isRecording)
     }
 
@@ -66,7 +66,7 @@ final class HotkeyRecorderTests: XCTestCase {
         let leftShift = CGEventFlags(rawValue: 0x0000_0002).union(.maskShift)
         view.flagsChanged(with: flagsEvent(leftShift))
         view.flagsChanged(with: flagsEvent([]))
-        XCTAssertEqual(written(), ["leftshift"])
+        XCTAssertEqual(written(), ["leftShift"])
     }
 
     // MARK: - chord capture

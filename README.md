@@ -111,12 +111,12 @@ Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 change on the spot. A new `model` or `recordings_dir` wants a restart, and yap
 says so when it sees one.
 
-`hotkey` is a modifier held on its own — `fn`, `rightoption`, `rightcommand`,
-`rightcontrol`, `rightshift`, `leftoption`, `leftcontrol`, `leftshift` — or a
+`hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
+`rightControl`, `rightShift`, `leftOption`, `leftControl`, `leftShift` — or a
 chord like `cmd+shift+space`, or a lone function key like `f5`. The recorder in
-Settings → Dictation writes this for you, in that spelling; typing it by hand
-is case-insensitive and ignores `-` and `_`, so `rightOption` works too. A
-chord is swallowed while yap holds it, so the app underneath never sees it.
+Settings → Dictation writes it for you; typing it by hand is case-insensitive
+and ignores `-` and `_`. A chord is swallowed while yap holds it, so the app
+underneath never sees it.
 
 `newline_after_release` hits Return once the text is in, which is what you want
 for chat boxes.
