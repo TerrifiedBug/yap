@@ -135,7 +135,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
         menuBar.onOpenKeyboardSettings = { Permissions.openSystemSettings(.keyboard) }
         menuBar.onRetryModel = { [weak self] in self?.loadModel() }
         menuBar.onInstallUpdate = { Updater.shared.installAndRestart() }
-        observeUpdates()
         // Cheaper and more accurate than polling: the only moment the rows
         // have to be right is the moment someone opens the menu to look at
         // them.
@@ -231,6 +230,10 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 warn("warmup failed: \(error)")
                 self.menuBar.setModelFailed()
             }
+            // Outside the catch on purpose. A build whose model will not load
+            // is the one a user most wants to replace, and the Restart item
+            // only ever appears for a daemon that is watching the updater.
+            self.observeUpdates()
         }
     }
 
@@ -270,7 +273,17 @@ final class Daemon: NSObject, NSApplicationDelegate {
     /// Point the menu bar at the updater. No schedule: `Updater` only ever
     /// checks when Settings asks it to, so this costs one closure and nothing
     /// afterwards.
+    ///
+    /// After warm-up rather than during `start()`, because touching
+    /// `Updater.shared` at all builds it, and its init asks the code-signing
+    /// machinery who signed us: measured at 6.5-17 ms cold, which is real
+    /// money against a status item that is supposed to be on screen in under a
+    /// second. `observe` replays the current state to a new subscriber, so
+    /// nothing that happened before this point is lost.
     private func observeUpdates() {
+        // "Retry Model Download" runs `loadModel` again, and a second
+        // subscription would leave the first in the map firing forever.
+        guard updateObserver == nil else { return }
         updateObserver = Updater.shared.observe { [weak self] state in
             guard let self else { return }
             if case .ready(let version, _) = state {
