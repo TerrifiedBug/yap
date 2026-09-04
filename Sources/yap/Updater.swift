@@ -57,11 +57,6 @@ final class Updater {
 
     private var observers: [UUID: (State) -> Void] = [:]
 
-    /// The daily timer, and the one-shot that runs the first check a little
-    /// after launch. Both nil while automatic checks are off, which is the
-    /// only state in which nothing of yap's is scheduled at all.
-    private var timer: Timer?
-    private var firstCheck: DispatchWorkItem?
     private var inFlight = false
 
     /// Overridable so the update path can be exercised against a local feed
@@ -106,41 +101,15 @@ final class Updater {
         observers.removeValue(forKey: token)
     }
 
-    // MARK: - scheduling
+    // MARK: - checking
 
-    /// One check shortly after launch, then one a day.
+    /// Checked when asked, and at no other time.
     ///
-    /// The 30 s delay keeps it off the startup path — the model has just
-    /// finished loading and the first press is the thing that matters. The
-    /// hour of tolerance lets the OS coalesce the daily wake with something
-    /// else it was going to do anyway.
-    func startAutomaticChecks() {
-        guard available, timer == nil, firstCheck == nil else { return }
-        let first = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.firstCheck = nil
-                self?.checkNow()
-            }
-        }
-        firstCheck = first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: first)
-
-        let daily = Timer.scheduledTimer(withTimeInterval: 86_400, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkNow() }
-        }
-        daily.tolerance = 3_600
-        timer = daily
-    }
-
-    func stopAutomaticChecks() {
-        firstCheck?.cancel()
-        firstCheck = nil
-        timer?.invalidate()
-        timer = nil
-    }
-
-    /// Manual check. Runs even with automatic checks off — turning the daily
-    /// request off is not the same as never wanting to know.
+    /// There is no schedule behind this and there is not going to be one: a
+    /// daily timer is a timer that ticks while nothing is happening, and yap
+    /// permits exactly one thing to run in the background, which is meeting
+    /// detection. So the update path costs nothing at all until "Check Now"
+    /// in Settings → General is clicked.
     func checkNow() {
         guard available, !inFlight else { return }
         if case .ready = state { return }

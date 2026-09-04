@@ -27,9 +27,6 @@ final class SettingsModel: ObservableObject {
     /// every other control here, this one can fail. It reverts on failure
     /// rather than showing a state the disk does not agree with.
     @Published var launchAtLogin: Bool { didSet { applyLaunchAtLogin() } }
-    @Published var updatesAutomatic: Bool {
-        didSet { writeSection("updates", "automatic", updatesAutomatic) }
-    }
     /// Live: the updater pushes every state change here while the window is
     /// open, so "Check Now" reads as something happening.
     @Published var updateStatus: String
@@ -72,7 +69,6 @@ final class SettingsModel: ObservableObject {
 
     init() {
         launchAtLogin = LaunchAgent.isInstalled
-        updatesAutomatic = Config.updatesAutomatic()
         updateStatus = Updater.shared.state.description
         hotkey = HotkeyBinding(parsing: Config.hotkey() ?? "")?.serialized
             ?? HotkeyBinding.fn.serialized

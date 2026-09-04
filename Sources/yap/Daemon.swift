@@ -135,6 +135,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
         menuBar.onOpenKeyboardSettings = { Permissions.openSystemSettings(.keyboard) }
         menuBar.onRetryModel = { [weak self] in self?.loadModel() }
         menuBar.onInstallUpdate = { Updater.shared.installAndRestart() }
+        observeUpdates()
         // Cheaper and more accurate than polling: the only moment the rows
         // have to be right is the moment someone opens the menu to look at
         // them.
@@ -226,7 +227,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 // still loading would queue behind the same warm-up anyway,
                 // and this way the state line tells one story at a time.
                 await self.coordinator.resumePending(root: self.root)
-                self.startUpdater()
             } catch {
                 warn("warmup failed: \(error)")
                 self.menuBar.setModelFailed()
@@ -267,14 +267,10 @@ final class Daemon: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Subscribe the menu bar to the updater, and arm the daily check if the
-    /// config wants it.
-    ///
-    /// After the model, deliberately: the first thing a fresh install does is
-    /// download several hundred megabytes, and competing with that for
-    /// bandwidth to ask about a release is the wrong order.
-    private func startUpdater() {
-        guard updateObserver == nil else { return }
+    /// Point the menu bar at the updater. No schedule: `Updater` only ever
+    /// checks when Settings asks it to, so this costs one closure and nothing
+    /// afterwards.
+    private func observeUpdates() {
         updateObserver = Updater.shared.observe { [weak self] state in
             guard let self else { return }
             if case .ready(let version, _) = state {
@@ -284,7 +280,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
             }
             self.refreshUpdateItem()
         }
-        if Config.updatesAutomatic() { Updater.shared.startAutomaticChecks() }
     }
 
     /// A restart mid-recording loses the meeting, and mid-press loses the
@@ -840,15 +835,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
             warn("config: recordings_dir changed — restart yap to use it")
         }
 
-        // Only meaningful once the updater is subscribed, which happens after
-        // the model warms; before that `startUpdater` reads the same setting.
-        if updateObserver != nil {
-            if Config.updatesAutomatic() {
-                Updater.shared.startAutomaticChecks()
-            } else {
-                Updater.shared.stopAutomaticChecks()
-            }
-        }
 
         warn("config reloaded")
     }

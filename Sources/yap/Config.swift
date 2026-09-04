@@ -79,12 +79,6 @@ enum Config {
         load()?["meeting_excluded_apps"] as? [String] ?? []
     }
 
-    /// Whether yap checks GitHub Releases for a newer build. Default on: it
-    /// updates itself in the background and never replaces anything without
-    /// being clicked, so the only thing this switch buys is the daily request.
-    static func updatesAutomatic() -> Bool {
-        section("updates")?["automatic"] as? Bool ?? true
-    }
 
     /// Apple voice processing (acoustic echo cancellation) on the mic, so
     /// speaker playback doesn't bleed into the mic track and get transcribed
@@ -187,7 +181,6 @@ enum Config {
           "meeting_detection": false,
           "meeting_auto_record": false,
           "meeting_excluded_apps": [],
-          "updates": { "automatic": true },
           "dictation": {
             "model": "parakeet-tdt-ctc-110m",
             "hotkey": "fn",

@@ -16,7 +16,6 @@ struct GeneralPane: View {
                     .foregroundStyle(.secondary)
             }
             Section("Updates") {
-                Toggle("Check for updates automatically", isOn: $model.updatesAutomatic)
                 LabeledContent("Version") { Text(model.version) }
                 HStack(spacing: 8) {
                     Text(model.updateStatus)

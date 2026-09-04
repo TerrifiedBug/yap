@@ -20,9 +20,9 @@ and drag yap to Applications.
 
 Then launch yap from Applications. The menu bar mark appears straight away and
 walks you through the rest: it asks for Accessibility, then the microphone, and
-pulls the model down in the background. That is 220 MB, once. Nothing you say
-ever leaves the machine; the only thing yap goes online for afterwards is a
-once-a-day check for a new version, which you can switch off in Settings.
+pulls the model down in the background. That is 220 MB, once, and then you are
+offline: nothing you say ever leaves the machine, and yap makes no network
+request of its own again unless you ask it to check for a new version.
 
 Builds are signed with a Developer ID certificate and notarized by Apple, so
 there is no Gatekeeper prompt. Apple Silicon only, because the model runs on
@@ -53,11 +53,12 @@ yap holds the most recent one in memory and nowhere else.
 "Quit yap" stops it until you launch it again, or until your next login if
 "Launch at login" is on.
 
-yap keeps itself up to date: it checks GitHub Releases once a day, downloads
-the new build, verifies its signature against the one it is running under, and
-puts "Update to x.y.z · Restart" in the menu. Nothing is replaced until you
-click it, and it is never offered while a recording is in flight. Turn the
-checks off in Settings → General.
+Settings → General has a "Check Now" button. It asks GitHub Releases once,
+downloads the new build, verifies its signature against the one yap is running
+under, and puts "Update to x.y.z · Restart" in the menu. Nothing is replaced
+until you click that, and it is never offered while a recording is in flight.
+There is no automatic check and no timer behind it: yap does nothing at all
+while it is idle.
 
 One daemon holds the hotkey at a time. Start another — from Applications, from
 a terminal, or because an upgrade restarted the login item — and the new one
@@ -93,7 +94,6 @@ what this yap can do. Your own values are never touched.
   "mic_voice_processing": true,
   "on_stop": "my-hook",
   "transcription": { "enabled": true },
-  "updates": { "automatic": true },
   "dictation": {
     "model": "parakeet-tdt-ctc-110m",
     "hotkey": "fn",
@@ -107,9 +107,9 @@ what this yap can do. Your own values are never touched.
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 `mute_output`, `newline_after_release`, `meeting_detection`,
-`meeting_auto_record`, `meeting_excluded_apps` and `updates.automatic` all
-change on the spot. A new `model` or `recordings_dir` wants a restart, and yap
-says so when it sees one.
+`meeting_auto_record` and `meeting_excluded_apps` all change on the spot. A
+new `model` or `recordings_dir` wants a restart, and yap says so when it sees
+one.
 
 `hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
 `rightControl`, `rightShift`, `leftOption`, `leftControl`, `leftShift` — or a
