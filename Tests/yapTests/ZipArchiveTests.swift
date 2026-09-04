@@ -30,6 +30,30 @@ final class ZipArchiveTests: XCTestCase {
         return destination
     }
 
+    /// The containment rule must not depend on how the caller spelled the
+    /// destination. The first version compared two standardized paths, which
+    /// resolves symlinks off the filesystem and does it asymmetrically: with a
+    /// relative destination it rejected an ordinary `yap.app/` entry. The
+    /// updater always passes an absolute path, so nothing shipped was broken —
+    /// this pins it so nothing has to keep being true by luck.
+    func testDestinationSpellingDoesNotAffectExtraction() throws {
+        let previous = FileManager.default.currentDirectoryPath
+        defer { FileManager.default.changeCurrentDirectoryPath(previous) }
+        XCTAssertTrue(FileManager.default.changeCurrentDirectoryPath(directory.path))
+
+        let archive = directory.appendingPathComponent("fixture.zip")
+        try XCTUnwrap(Data(base64Encoded: Self.fixture, options: .ignoreUnknownCharacters))
+            .write(to: archive)
+
+        // Relative, resolved against the working directory set above.
+        try ZipArchive.extract(URL(fileURLWithPath: "fixture.zip"), to: URL(fileURLWithPath: "out"))
+        XCTAssertEqual(
+            try String(
+                contentsOf: directory.appendingPathComponent("out/bundle/Info.plist"),
+                encoding: .utf8),
+            "<plist/>")
+    }
+
     /// Deflated, and 0755: a Mach-O written 0644 is a bundle macOS refuses to
     /// launch, and nothing else in the update path would notice.
     func testDeflatedEntryKeepsItsContentsAndExecutableBit() throws {
