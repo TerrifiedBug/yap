@@ -98,15 +98,28 @@ enum ZipArchive {
     }
 
     /// Entry names are attacker-controlled the moment a feed is: an archive
-    /// saying `../../bin/launchd` must not write there. Resolving and then
-    /// checking containment covers `..` and absolute names together.
+    /// saying `../../bin/launchd` must not write there.
+    ///
+    /// The name is judged, not the joined path. The previous version compared
+    /// two `standardizedFileURL` paths, which is a security check that depends
+    /// on the filesystem and on Foundation's willingness to resolve the
+    /// `/tmp` → `/private/tmp` class of symlink — and it does so
+    /// asymmetrically: hand it a *relative* destination and an ordinary
+    /// `yap.app/` entry is rejected as an escape. The updater only ever passes
+    /// an absolute path, so nothing shipped was broken; a rule this important
+    /// should not rest on that being true forever.
+    ///
+    /// Judging the components instead is symmetric, touches no filesystem, and
+    /// says exactly what is meant: every written path is the destination plus
+    /// a sequence of plain names. With symlink entries refused as well, that
+    /// is the whole containment argument — nothing inside the destination can
+    /// point outside it.
     private static func resolve(_ name: String, under destination: URL) throws -> URL {
-        let root = destination.standardizedFileURL.path
-        let target = destination.appendingPathComponent(name).standardizedFileURL
-        guard target.path == root || target.path.hasPrefix(root + "/") else {
-            throw ZipError.escapingPath(name)
-        }
-        return target
+        let components = name.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !name.hasPrefix("/"), !components.isEmpty,
+            !components.contains(".."), !components.contains(".")
+        else { throw ZipError.escapingPath(name) }
+        return components.reduce(destination) { $0.appendingPathComponent($1) }
     }
 
     private static func centralDirectory(in data: Data) throws -> [Entry] {
