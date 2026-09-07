@@ -72,22 +72,29 @@ actor TranscriptionCoordinator {
         while let task = drainTask { await task.value }
     }
 
-    /// Scan the recordings root for sessions that finished (meta.json exists)
-    /// but were never transcribed. Folder names sort chronologically, so
-    /// oldest-first is a name sort.
-    func resumePending(root: URL) {
+    /// Scan the recordings root and every route folder for sessions that
+    /// finished (meta.json exists) but were never transcribed. Folder names
+    /// sort chronologically, so oldest-first is a name sort.
+    func resumePending() {
         guard Config.transcriptionEnabled() else { return }
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil
-        ) else { return }
-
         let fm = FileManager.default
-        let pending = entries
-            .filter {
+        // The root and every routed folder, once each: two routes to one
+        // folder, or a route pointing back at the root, must not queue a
+        // session twice.
+        var seen: Set<String> = []
+        let roots = ([Config.resolveRoot()] + Config.recordingRoutes().keys.map { Config.resolveRoot(for: $0) })
+            .filter { seen.insert($0.standardizedFileURL.path).inserted }
+        var pending: [URL] = []
+        for root in roots {
+            guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+                continue
+            }
+            pending += entries.filter {
                 fm.fileExists(atPath: $0.appendingPathComponent("meta.json").path)
                     && !fm.fileExists(atPath: $0.appendingPathComponent("transcript.json").path)
             }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        }
+        pending.sort { $0.lastPathComponent < $1.lastPathComponent }
         for dir in pending where !queue.contains(dir) {
             queue.append(dir)
         }

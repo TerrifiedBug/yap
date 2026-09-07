@@ -24,7 +24,7 @@ final class ConfigSerializerTests: XCTestCase {
             NSDictionary(dictionary: original)
         )
 
-        let order = ["recordings_dir", "transcription", "mic_voice_processing",
+        let order = ["recordings_dir", "recording_routes", "transcription", "mic_voice_processing",
                      "meeting_detection", "meeting_auto_record", "meeting_excluded_apps",
                      "dictation"]
         let offsets = order.map { text.range(of: "\"\($0)\"")?.lowerBound }

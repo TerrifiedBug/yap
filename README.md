@@ -88,6 +88,7 @@ what this yap can do. Your own values are never touched.
 ```json
 {
   "recordings_dir": "~/Recordings",
+  "recording_routes": {},
   "meeting_detection": false,
   "meeting_auto_record": false,
   "meeting_excluded_apps": [],
@@ -107,9 +108,9 @@ what this yap can do. Your own values are never touched.
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 `mute_output`, `newline_after_release`, `meeting_detection`,
-`meeting_auto_record` and `meeting_excluded_apps` all change on the spot. A
-new `model` or `recordings_dir` wants a restart, and yap says so when it sees
-one.
+`meeting_auto_record`, `meeting_excluded_apps`, `recordings_dir` and
+`recording_routes` all change on the spot. A new `model` wants a restart, and
+yap says so when it sees one.
 
 `hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
 `rightControl`, `rightShift`, `leftOption`, `leftControl`, `leftShift` — or a
@@ -154,6 +155,20 @@ speech service keeps an input stream open, so detection reads it as a call and
 offers to ignore it under the name `CoreSpeech`. Ignore it once and it stops
 being a meeting.
 
+`recordings_dir` is where recorded sessions land, `~/Recordings` by default.
+
+`recording_routes` sends calls from particular apps somewhere else: a map from
+bundle identifier to folder, so a Zoom call lands in a work folder and a
+FaceTime call in a personal one. A value starting with `~` is expanded; a
+relative one like `"work"` sits under `recordings_dir`. Only a recording yap
+started from a detected call is routed — one you start from the menu bar
+always goes to `recordings_dir`, and so does a call from an app that is not
+listed. If a route's folder cannot be created (an unmounted volume, say), the
+session falls back to `recordings_dir` and yap logs a warning naming the route.
+Manage the list under Recordings in the Settings window: + picks the app and
+then its folder, − removes the selected route, and double-clicking a row
+changes its folder.
+
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
 call coming out of your speakers goes back into the mic. Without it, the other
 side gets transcribed twice, the second time as you. If some audio route
@@ -169,8 +184,10 @@ Name… buttons. Open reveals the transcript in Finder; Name… renames the fold
 and updates its metadata and heading. Turn it off to use yap as a plain
 recorder: `on_stop` then fires when the recording stops rather than after the
 transcript. Nothing is lost either way. Turn it back on, restart, and yap works
-through every session under `recordings_dir` that has no transcript yet, firing
-`on_stop` again for each.
+through every session under `recordings_dir` and every route folder that has
+no transcript yet, firing `on_stop` again for each. A folder whose route was
+removed is no longer scanned, so a session left there waits until the route
+comes back.
 
 ## Models
 
