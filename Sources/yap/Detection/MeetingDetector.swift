@@ -15,9 +15,9 @@ import Foundation
 /// device read.
 @MainActor
 final class MeetingDetector {
-    /// Something took the mic. The arguments are its capture pid and a display
-    /// name ("Microsoft Teams") when that pid belongs to an app.
-    var onMeetingStart: ((pid_t, String?) -> Void)?
+    /// Something took the mic. The arguments are its capture pid and who it
+    /// belongs to, when macOS can say — see `MeetingTitle.app`.
+    var onMeetingStart: ((pid_t, MeetingApp?) -> Void)?
 
     /// The mic went quiet a moment ago (~2 s). The call could still come back
     /// from a device switch, so this is only for things that are cheap to
@@ -71,6 +71,10 @@ final class MeetingDetector {
     /// The process the user said no to. A dropout of that same process stays
     /// declined, but a different app taking the mic is a different call.
     private var declinedPID: pid_t?
+    /// Processes the caller told us to pretend aren't there — an app the user
+    /// excluded. Held by pid and dropped when the mic goes quiet, so removing
+    /// an exclusion takes effect the next time that app takes the mic.
+    private var ignoredPIDs: Set<pid_t> = []
     private var loggedPollFailure = false
 
     init(capturePID: ((pid_t?) -> pid_t?)? = nil) {
@@ -100,12 +104,31 @@ final class MeetingDetector {
         inMeeting = false
         askedPID = nil
         declinedPID = nil
+        ignoredPIDs = []
     }
 
     /// The user dismissed the prompt for whoever holds the mic right now.
     /// Don't ask again for that process.
     func declineCurrentMeeting() {
         declinedPID = observedPID
+    }
+
+    /// The client holding the mic belongs to an app the user excluded: drop it
+    /// out of the scan entirely, like our own pid, and keep looking.
+    ///
+    /// Not `declineCurrentMeeting`, which only stops the *prompt*. A declined
+    /// client stays the one we follow, and following it is a cache hit that
+    /// short-circuits the scan — so a process that holds an input stream for
+    /// hours (macOS's speech daemon, a self-updating app's helper) would hide
+    /// every other app behind it, and no real call could be detected for as
+    /// long as it ran. An excluded app is meant to be invisible to meeting
+    /// logic, not merely unprompted, and this is what makes that true.
+    func ignoreCurrentClient() {
+        guard let pid = observedPID else { return }
+        ignoredPIDs.insert(pid)
+        capturing = nil
+        observedPID = nil
+        consecutiveActive = 0
     }
 
     /// The user accepted the prompt for the client seen on the latest poll.
@@ -181,17 +204,18 @@ final class MeetingDetector {
         // about, and never for one the user turned down.
         guard pid != askedPID, pid != declinedPID else { return }
         askedPID = pid
-        onMeetingStart?(pid, Self.appName(forPID: pid))
+        onMeetingStart?(pid, MeetingTitle.app(forPID: pid, audioBundleID: audioBundleID(of: pid)))
     }
 
     /// The capturing process to follow, excluding yap itself.
     ///
     /// Three tiers, cheapest first, because this runs every second forever:
-    /// ask the devices whether anyone at all is capturing (~0.1 ms, and the
+    /// ask the devices whether anyone at all is capturing (0.11 ms, and the
     /// answer is no all day), then re-check the client we already know
-    /// about (~2 ms), and only scan every client when neither settles it.
-    /// Interrogating all ~50 audio clients costs ~45 ms — that is the main
-    /// thread, so it stays off the common path.
+    /// about (0.74 ms), and only scan every client when neither settles it.
+    /// Interrogating every audio client costs 3.8 ms at 32 of them (M4, p50)
+    /// and grows with the machine's — that is the main thread, so it stays off
+    /// the common path.
     ///
     /// Before a prompt is accepted, `preferred` is nil and any external input
     /// client can start a meeting. Afterwards it is the pid behind that prompt:
@@ -199,6 +223,11 @@ final class MeetingDetector {
     private func currentCapturingPID(preferred: pid_t?) -> pid_t? {
         guard anyInputDeviceRunning() else {
             capturing = nil
+            // The mic is genuinely idle, so exclusions get re-read from
+            // config the next time an app takes it. A pid recycled onto a
+            // different app before that would be ignored in its place; it
+            // costs one undetected call and heals at the next quiet gap.
+            ignoredPIDs = []
             return nil
         }
         // Same client as last poll? Confirm the id wasn't recycled onto another
@@ -225,6 +254,9 @@ final class MeetingDetector {
             // the keypress, under its own pid. `suppressed` handles that, and
             // the two are easy to confuse when a prompt appears.
             guard let pid = pidProperty(object), pid != ownPID else { continue }
+            // An app the user excluded is invisible here rather than merely
+            // unprompted, so the scan carries on to whatever else has the mic.
+            guard !ignoredPIDs.contains(pid) else { continue }
             guard preferred == nil || pid == preferred else { continue }
             capturing = (object, pid)
             return pid
@@ -264,12 +296,15 @@ final class MeetingDetector {
         return AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr && size > 0
     }
 
-    /// Finder's name for the app owning `pid` — "Google Chrome" for a renderer
-    /// buried in Chrome's Frameworks directory, since the outermost `.app` is
-    /// the one a human would recognise. Daemons and XPC services have no `.app`
-    /// and get no name.
-    private static func appName(forPID pid: pid_t) -> String? {
-        MeetingTitle.appBundlePath(forPID: pid).map(FileManager.default.displayName(atPath:))
+    /// Core Audio's own attribution for the client we are following, read only
+    /// when we are about to prompt: 0.02 ms, and for a helper process or a
+    /// system daemon it is the only identity there is. See `MeetingTitle.app`.
+    ///
+    /// Nil when the pid came from the test seam rather than a scan, which
+    /// leaves identity to the executable path alone.
+    private func audioBundleID(of pid: pid_t) -> String? {
+        guard let capturing, capturing.pid == pid else { return nil }
+        return stringProperty(capturing.object, kAudioProcessPropertyBundleID)
     }
 
     // MARK: - Core Audio plumbing
@@ -333,6 +368,22 @@ final class MeetingDetector {
             return nil
         }
         return value
+    }
+
+    /// A CFString property, transferred out as a Swift string. Core Audio
+    /// hands back a +1 reference, so it is taken as retained.
+    private func stringProperty(
+        _ object: AudioObjectID,
+        _ selector: AudioObjectPropertySelector
+    ) -> String? {
+        var address = Self.globalAddress(selector)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &value) {
+            AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0)
+        }
+        guard status == noErr, let string = value?.takeRetainedValue() else { return nil }
+        return string as String
     }
 
     private static func globalAddress(

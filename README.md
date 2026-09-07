@@ -147,6 +147,13 @@ and name, and the + and − under it add one ahead of time or stop ignoring the
 one you select. Detection stays fail-open — an app you have never excluded still
 gets offered, even one yap has never heard of.
 
+What holds the microphone is not always an app you launched. A helper process
+belonging to one counts as its app — Ignore covers every helper Chrome or Teams
+starts — and a background daemon counts as itself: with "Hey Siri" on, macOS's
+speech service keeps an input stream open, so detection reads it as a call and
+offers to ignore it under the name `CoreSpeech`. Ignore it once and it stops
+being a meeting.
+
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
 call coming out of your speakers goes back into the mic. Without it, the other
 side gets transcribed twice, the second time as you. If some audio route
