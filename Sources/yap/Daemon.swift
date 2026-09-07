@@ -15,7 +15,6 @@ import Foundation
 final class Daemon: NSObject, NSApplicationDelegate {
     private let transcriber: any Transcriber
     private let coordinator: TranscriptionCoordinator
-    private let root: URL
     private let monitor: HotkeyMonitor
     private let capture = AudioCapture()
     private let overlay = RecordingOverlay()
@@ -93,13 +92,11 @@ final class Daemon: NSObject, NSApplicationDelegate {
     init(
         transcriber: any Transcriber,
         model: TranscriptionModel,
-        root: URL,
         hotkey: HotkeyBinding,
         echoTranscripts: Bool,
         debugHotkey: Bool
     ) {
         self.transcriber = transcriber
-        self.root = root
         self.model = model
         self.hotkey = hotkey
         self.echoTranscripts = echoTranscripts
@@ -225,7 +222,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 // Only now: a backlog transcribing through a model that is
                 // still loading would queue behind the same warm-up anyway,
                 // and this way the state line tells one story at a time.
-                await self.coordinator.resumePending(root: self.root)
+                await self.coordinator.resumePending()
             } catch {
                 warn("warmup failed: \(error)")
                 self.menuBar.setModelFailed()
@@ -595,7 +592,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
     // MARK: - sessions
 
-    private func startSession(auto: Bool = false, title: String? = nil) {
+    private func startSession(auto: Bool = false, title: String? = nil, app: MeetingApp? = nil) {
         guard session == nil else { return }
         // Same gate as a press, different report: this one was asked for by a
         // click, so it owes an answer rather than a log line.
@@ -605,8 +602,19 @@ final class Daemon: NSObject, NSApplicationDelegate {
             return
         }
         do {
-            let newSession = try RecordingSession(root: root)
+            let routed = Config.resolveRoot(for: app?.bundleID)
+            let newSession: RecordingSession
+            do {
+                newSession = try RecordingSession(root: routed)
+            } catch where routed != Config.resolveRoot() {
+                // A route the disk cannot honour (unmounted volume, permission
+                // denied) must not cost the call: fall back to the root and
+                // say so.
+                warn("route: cannot create \(routed.path) for \(app?.bundleID ?? "?") — using recordings_dir")
+                newSession = try RecordingSession(root: Config.resolveRoot())
+            }
             newSession.title = title
+            newSession.appBundleID = app?.bundleID
             try newSession.start()
             session = newSession
             autoStarted = auto
@@ -709,7 +717,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
             // Standing consent is read at each event so config saves take
             // effect without a restart. Recording is always announced.
             if Config.meetingAutoRecord() {
-                self.startSession(auto: true, title: title)
+                self.startSession(auto: true, title: title, app: app)
                 guard self.session != nil else { return }
                 detector?.acceptCurrentMeeting()
                 showToast(
@@ -738,7 +746,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
             ) { [weak self] in
                 guard let self, self.session == nil else { return }
                 detector?.acceptCurrentMeeting()
-                self.startSession(auto: true, title: title)
+                self.startSession(auto: true, title: title, app: app)
             }
         }
         // An unanswered prompt outlives the call it asked about (it sits for
@@ -840,14 +848,6 @@ final class Daemon: NSObject, NSApplicationDelegate {
         if let configured = try? Resolve.model(), configured.id != model.id {
             warn("config: model changed to \(configured.id) — restart yap to load it")
         }
-
-        // Same reasoning, different reason: a live session is writing into the
-        // old root, and resumePending was handed it at boot. Moving the daemon
-        // mid-flight would strand both.
-        if Config.resolveRoot() != root {
-            warn("config: recordings_dir changed — restart yap to use it")
-        }
-
 
         warn("config reloaded")
     }

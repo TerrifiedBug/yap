@@ -69,7 +69,6 @@ struct Run: ParsableCommand {
 
         let chosenModel = try Resolve.model()
         let key = Resolve.hotkey()
-        let root = Config.resolveRoot()
 
         // Before the model loads, so a takeover never holds two copies of it
         // in memory at once.
@@ -85,7 +84,6 @@ struct Run: ParsableCommand {
         let daemon = Daemon(
             transcriber: chosenModel.makeTranscriber(),
             model: chosenModel,
-            root: root,
             hotkey: key,
             echoTranscripts: echoTranscripts,
             debugHotkey: debugHotkey
@@ -109,7 +107,7 @@ struct Run: ParsableCommand {
             "yap \(Yap.configuration.version ?? "?") · \(key.serialized) "
             + "\(Config.tapToToggle() ? "tap" : "hold") · \(chosenModel.id)"
         if Config.meetingDetectionEnabled() {
-            banner += " · watching for meetings → \(root.path)"
+            banner += " · watching for meetings → \(Config.resolveRoot().path)"
         }
         banner += " · ^C to quit"
         warn(banner)

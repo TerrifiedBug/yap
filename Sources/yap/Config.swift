@@ -4,6 +4,7 @@ import Foundation
 ///
 ///     {
 ///       "recordings_dir": "~/Recordings",
+///       "recording_routes": { "us.zoom.xos": "~/Work" },
 ///       "transcription": { "enabled": true },
 ///       "mic_voice_processing": true,
 ///       "meeting_detection": false,
@@ -36,6 +37,23 @@ enum Config {
     static func recordingsDir() -> URL? {
         guard let dir = load()?["recordings_dir"] as? String, !dir.isEmpty else { return nil }
         return URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
+    }
+
+    /// Bundle id -> folder for sessions yap starts from a detected call. A
+    /// value is `~`-expanded; a relative one ("work") sits under
+    /// `recordings_dir`. Manual sessions and apps not listed use `resolveRoot()`.
+    /// Read at each session start, so edits apply to the next call.
+    static func recordingRoutes() -> [String: String] {
+        load()?["recording_routes"] as? [String: String] ?? [:]
+    }
+
+    /// Where a session for `bundleID` lands: its route, or the recordings root.
+    static func resolveRoot(for bundleID: String?) -> URL {
+        let root = resolveRoot()
+        guard let bundleID, let raw = recordingRoutes()[bundleID], !raw.isEmpty else { return root }
+        let expanded = (raw as NSString).expandingTildeInPath
+        // An absolute path ignores the base; a relative one is joined to it.
+        return URL(fileURLWithPath: expanded, isDirectory: true, relativeTo: root).standardizedFileURL
     }
 
     /// Shell command to spawn after each session's transcript is written (or
@@ -176,6 +194,7 @@ enum Config {
     static let template = """
         {
           "recordings_dir": "~/Recordings",
+          "recording_routes": {},
           "transcription": { "enabled": true },
           "mic_voice_processing": true,
           "meeting_detection": false,

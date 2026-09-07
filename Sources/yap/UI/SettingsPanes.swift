@@ -73,6 +73,7 @@ struct DictationPane: View {
 
 struct RecordingPane: View {
     @ObservedObject var model: SettingsModel
+    @State private var routeSelection: String?
 
     var body: some View {
         Form {
@@ -86,8 +87,28 @@ struct RecordingPane: View {
                         Button("Choose…") { model.chooseRecordingsDir() }
                     }
                 }
+            }
+            Section {
+                AppList(
+                    apps: model.routes,
+                    selection: $routeSelection,
+                    emptyText: "Calls from apps you add here are saved to their own folder.",
+                    addHelp: "Route an app…",
+                    removeHelp: "Stop routing the selected app",
+                    onAdd: { model.addRoute() },
+                    onRemove: {
+                        guard let routeSelection else { return }
+                        model.removeRoute(routeSelection)
+                        self.routeSelection = nil
+                    },
+                    onActivate: { model.changeRouteFolder($0) }
+                )
+            } header: {
+                Text("Route by app")
             } footer: {
-                RestartNote()
+                Text("Calls detected from these apps are saved here instead of the folder above. Double-click a row to change its folder.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Transcribe recordings automatically", isOn: $model.transcriptionEnabled)
@@ -121,9 +142,12 @@ struct MeetingsPane: View {
                     .disabled(!model.meetingDetection)
             }
             Section("Ignored apps") {
-                IgnoredAppList(
+                AppList(
                     apps: model.excludedApps,
                     selection: $selection,
+                    emptyText: "Apps you ignore never trigger a meeting prompt.",
+                    addHelp: "Ignore an app…",
+                    removeHelp: "Stop ignoring the selected app",
                     onAdd: { model.addExcludedApp() },
                     onRemove: {
                         guard let selection else { return }
@@ -148,16 +172,22 @@ private struct RestartNote: View {
     }
 }
 
-// MARK: - Ignored apps
+// MARK: - App list
 
 /// The bordered list with `+` and `−` under it that macOS uses everywhere an
 /// editable set of things lives. Familiar beats invented here: anyone who has
-/// added a login item already knows how to work this.
-private struct IgnoredAppList: View {
-    let apps: [SettingsModel.ExcludedApp]
+/// added a login item already knows how to work this. Serves both the ignored
+/// apps and the recording routes; only the words and the subtitle differ.
+private struct AppList: View {
+    let apps: [SettingsModel.AppRow]
     @Binding var selection: String?
+    let emptyText: String
+    let addHelp: String
+    let removeHelp: String
     let onAdd: () -> Void
     let onRemove: () -> Void
+    /// Double-click on a row, for lists where a row has something to edit.
+    var onActivate: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,7 +207,7 @@ private struct IgnoredAppList: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .overlay {
                 if apps.isEmpty {
-                    Text("Apps you ignore never trigger a meeting prompt.")
+                    Text(emptyText)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -187,9 +217,9 @@ private struct IgnoredAppList: View {
 
             Divider()
             HStack(spacing: 0) {
-                stepper("plus", help: "Ignore an app…", action: onAdd)
+                stepper("plus", help: addHelp, action: onAdd)
                 Divider().frame(height: 16)
-                stepper("minus", help: "Stop ignoring the selected app", action: onRemove)
+                stepper("minus", help: removeHelp, action: onRemove)
                     .disabled(selection == nil)
                 Spacer(minLength: 0)
             }
@@ -207,7 +237,7 @@ private struct IgnoredAppList: View {
         }
     }
 
-    private func row(_ app: SettingsModel.ExcludedApp) -> some View {
+    private func row(_ app: SettingsModel.AppRow) -> some View {
         let selected = selection == app.id
         return HStack(spacing: 8) {
             icon(app)
@@ -221,7 +251,7 @@ private struct IgnoredAppList: View {
                     .font(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(app.installed ? app.id : "Not installed")
+                Text(app.detail)
                     .font(.system(size: 10))
                     .foregroundStyle(
                         selected ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
@@ -236,6 +266,9 @@ private struct IgnoredAppList: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(selected ? Color.accentColor : .clear)
         .contentShape(Rectangle())
+        // The double-tap sits inside the single so it gets first refusal;
+        // the other way round the single tap eats both clicks.
+        .onTapGesture(count: 2) { onActivate?(app.id) }
         .onTapGesture { selection = selected ? nil : app.id }
     }
 
@@ -243,7 +276,7 @@ private struct IgnoredAppList: View {
     /// squircle beside two real app icons reads as a failed image load, and
     /// the row is trying to say the app is gone.
     @ViewBuilder
-    private func icon(_ app: SettingsModel.ExcludedApp) -> some View {
+    private func icon(_ app: SettingsModel.AppRow) -> some View {
         if let image = app.icon {
             Image(nsImage: image).resizable()
         } else {

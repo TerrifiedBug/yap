@@ -9,6 +9,9 @@ final class RecordingSession {
     private(set) var dir: URL
     let startedAt = Date()
     var title: String?
+    /// Bundle id of the app whose call started this session; nil for manual
+    /// sessions and for detected clients without a bundle.
+    var appBundleID: String?
 
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
@@ -112,7 +115,7 @@ final class RecordingSession {
         let systemStart = system.firstBufferAt ?? startedAt
         let earliest = min(micStart, systemStart)
 
-        let meta: [String: Any] = [
+        var meta: [String: Any] = [
             "started": iso.string(from: startedAt),
             "ended": iso.string(from: ended),
             "duration_seconds": Int(ended.timeIntervalSince(startedAt)),
@@ -122,6 +125,7 @@ final class RecordingSession {
                 "system": Int(systemStart.timeIntervalSince(earliest) * 1000),
             ],
         ]
+        if let appBundleID { meta["app"] = appBundleID }
         if let data = try? JSONSerialization.data(
             withJSONObject: meta,
             options: [.prettyPrinted, .sortedKeys]

@@ -93,7 +93,7 @@ extension Config {
     /// Nested section first: inserting inside `dictation` leaves the file's own
     /// opening brace where it was, while inserting at the top level moves every
     /// offset after it — including the one just computed.
-    private static func backfilled(
+    static func backfilled(
         _ text: String, inner: [String], outer: [String], defaults: [String: Any]
     ) -> String? {
         var updated = text
@@ -127,8 +127,10 @@ extension Config {
         return result
     }
 
-    /// Put `"key": default` lines just inside the brace that opens an object —
-    /// the one after `marker`, or the file's own when there is no marker.
+    /// Put `"key": default` lines where the template lists them: after the
+    /// nearest earlier template key the object already has, or just inside
+    /// the brace that opens it — the one after `marker`, or the file's own
+    /// when there is no marker — when no such key exists.
     ///
     /// Text rather than a re-serialize, so nothing but the new lines moves.
     /// Nil when that brace does not end a line, which is the compact-file case
@@ -150,14 +152,46 @@ extension Config {
             text[brace.upperBound...].first == "\n"
         else { return nil }
 
-        var lines = ""
+        // Keys go in template order, one at a time, each looking for its
+        // anchor in the text as it stands — so a key just added is the anchor
+        // for the next, and two missing neighbours come out in order.
+        let ordered = inTemplateOrder(defaults.keys)
+        var updated = text
+        // An offset rather than an index: every insertion lands at or after
+        // the brace, so the offset survives each one where the index would not.
+        let braceEnd = text.distance(from: text.startIndex, to: brace.upperBound)
         for key in keys {
             guard let value = defaults[key], let literal = literal(value, indent: indent) else {
                 return nil
             }
-            lines += "\n\(indent)\"\(key)\": \(literal),"
+            let line = "\n\(indent)\"\(key)\": \(literal),"
+            let braceIndex = updated.index(updated.startIndex, offsetBy: braceEnd)
+            let at = anchor(for: key, among: ordered, in: updated, from: braceIndex) ?? braceIndex
+            updated.insert(contentsOf: line, at: at)
         }
-        return text.replacingCharacters(in: brace, with: "{\(lines)")
+        return updated
+    }
+
+    /// The end of the line holding the nearest template key listed before
+    /// `key` that the object already has, so the new line lands under it.
+    /// Only a line that ends in `,` qualifies: a value that continues on the
+    /// next line (the `dictation` object, an array spread out by hand) has no
+    /// edge to insert on, and a last line without its comma would need
+    /// editing itself. Nil when nothing qualifies.
+    private static func anchor(
+        for key: String, among ordered: [String], in text: String, from start: String.Index
+    ) -> String.Index? {
+        guard let position = ordered.firstIndex(of: key) else { return nil }
+        for earlier in ordered[..<position].reversed() {
+            guard let found = text.range(of: "\"\(earlier)\":", range: start..<text.endIndex) else {
+                continue
+            }
+            let lineEnd = text[found.upperBound...].firstIndex(of: "\n") ?? text.endIndex
+            let last = text[found.upperBound..<lineEnd].last { !$0.isWhitespace }
+            guard last == "," else { continue }
+            return lineEnd
+        }
+        return nil
     }
 
     /// One JSON value as it would be written in the file. An object is spread
@@ -165,8 +199,9 @@ extension Config {
     /// `dictation`; anything else is a single token.
     private static func literal(_ value: Any, indent: String) -> String? {
         // An object being written for the first time may as well have a stable
-        // key order; a scalar has nothing to sort.
-        let pretty = value is [String: Any]
+        // key order; a scalar has nothing to sort. An empty object is a single
+        // `{}` token — Foundation pretty-prints it as `{\n\n}`.
+        let pretty = (value as? [String: Any]).map { !$0.isEmpty } ?? false
         var options: JSONSerialization.WritingOptions = [.fragmentsAllowed, .withoutEscapingSlashes]
         if pretty { options.formUnion([.prettyPrinted, .sortedKeys]) }
         guard

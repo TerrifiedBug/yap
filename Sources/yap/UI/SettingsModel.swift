@@ -12,7 +12,8 @@ import UniformTypeIdentifiers
 /// text editor is whichever wrote first.
 @MainActor
 final class SettingsModel: ObservableObject {
-    struct ExcludedApp: Identifiable {
+    /// One row of an app list: an exclusion or a recording route.
+    struct AppRow: Identifiable {
         /// The bundle identifier, which is what the config file stores.
         let id: String
         let name: String
@@ -21,6 +22,9 @@ final class SettingsModel: ObservableObject {
         let icon: NSImage?
         /// Whether the app is still on this Mac.
         let installed: Bool
+        /// The subtitle: the bundle id for an exclusion, the folder for a
+        /// route — and for a route, exactly the string the config stores.
+        let detail: String
     }
 
     /// The login item, which is a file rather than a config key — so unlike
@@ -57,7 +61,8 @@ final class SettingsModel: ObservableObject {
     @Published var meetingAutoRecord: Bool {
         didSet { write("meeting_auto_record", meetingAutoRecord) }
     }
-    @Published private(set) var excludedApps: [ExcludedApp]
+    @Published private(set) var excludedApps: [AppRow]
+    @Published private(set) var routes: [AppRow]
 
     /// Suppresses the write-through while `init` fills the properties in.
     private var loading = true
@@ -84,7 +89,8 @@ final class SettingsModel: ObservableObject {
         onStop = Config.onStop() ?? ""
         meetingDetection = Config.meetingDetectionEnabled()
         meetingAutoRecord = Config.meetingAutoRecord()
-        excludedApps = Config.meetingExcludedApps().map(Self.resolve)
+        excludedApps = Config.meetingExcludedApps().map { Self.resolve($0, detail: nil) }
+        routes = Self.sorted(Config.recordingRoutes().map { Self.resolve($0.key, detail: $0.value) })
         loading = false
         updateObserver = Updater.shared.observe { [weak self] state in
             self?.updateStatus = state.description
@@ -101,36 +107,69 @@ final class SettingsModel: ObservableObject {
     // MARK: actions
 
     func chooseRecordingsDir() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.directoryURL = Config.recordingsDir() ?? Config.defaultRoot
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = pickFolder() else { return }
         recordingsDir = Self.abbreviated(url)
     }
 
     func addExcludedApp() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.prompt = "Ignore"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        // An app with no identifier in its Info.plist has nothing we could
-        // store, and nothing to match a capture pid against later.
-        guard let bundleID = Bundle(url: url)?.bundleIdentifier else { return }
+        guard let bundleID = pickApp(prompt: "Ignore") else { return }
         guard !excludedApps.contains(where: { $0.id == bundleID }) else { return }
-        excludedApps.append(Self.resolve(bundleID))
+        excludedApps.append(Self.resolve(bundleID, detail: nil))
         writeExcludedApps()
     }
 
     func removeExcludedApp(_ bundleID: String) {
         excludedApps.removeAll { $0.id == bundleID }
         writeExcludedApps()
+    }
+
+    func addRoute() {
+        // App first, folder second; cancelling either adds nothing.
+        guard let bundleID = pickApp(prompt: "Route") else { return }
+        guard let folder = pickFolder() else { return }
+        setRoute(bundleID, folder: Self.abbreviated(folder))
+    }
+
+    func changeRouteFolder(_ bundleID: String) {
+        guard let folder = pickFolder() else { return }
+        setRoute(bundleID, folder: Self.abbreviated(folder))
+    }
+
+    func removeRoute(_ bundleID: String) {
+        routes.removeAll { $0.id == bundleID }
+        writeRoutes()
+    }
+
+    /// Adding an app that already has a route just changes its folder.
+    private func setRoute(_ bundleID: String, folder: String) {
+        routes.removeAll { $0.id == bundleID }
+        routes = Self.sorted(routes + [Self.resolve(bundleID, detail: folder)])
+        writeRoutes()
+    }
+
+    private func pickFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.directoryURL = Config.recordingsDir() ?? Config.defaultRoot
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url
+    }
+
+    private func pickApp(prompt: String) -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.prompt = prompt
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        // An app with no identifier in its Info.plist has nothing we could
+        // store, and nothing to match a capture pid against later.
+        return Bundle(url: url)?.bundleIdentifier
     }
 
     func openConfigFile() {
@@ -214,6 +253,10 @@ final class SettingsModel: ObservableObject {
         write("meeting_excluded_apps", excludedApps.map(\.id))
     }
 
+    private func writeRoutes() {
+        write("recording_routes", Dictionary(uniqueKeysWithValues: routes.map { ($0.id, $0.detail) }))
+    }
+
     private func scheduleOnStopWrite() {
         guard !loading else { return }
         onStopWrite?.cancel()
@@ -233,23 +276,31 @@ final class SettingsModel: ObservableObject {
         (url.path as NSString).abbreviatingWithTildeInPath
     }
 
+    /// A stable name order, so a row does not jump after a click.
+    private static func sorted(_ rows: [AppRow]) -> [AppRow] {
+        rows.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     /// Bundle id back to something a person recognises. An app that has since
     /// been deleted keeps its place in the list under its raw identifier —
     /// removing an exclusion the user cannot see is not ours to decide.
-    private static func resolve(_ bundleID: String) -> ExcludedApp {
+    /// `detail` nil draws the exclusion subtitle: the id, or "Not installed".
+    private static func resolve(_ bundleID: String, detail: String?) -> AppRow {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return ExcludedApp(
+            return AppRow(
                 id: bundleID,
                 name: bundleID,
                 icon: nil,
-                installed: false
+                installed: false,
+                detail: detail ?? "Not installed"
             )
         }
-        return ExcludedApp(
+        return AppRow(
             id: bundleID,
             name: FileManager.default.displayName(atPath: url.path),
             icon: NSWorkspace.shared.icon(forFile: url.path),
-            installed: true
+            installed: true,
+            detail: detail ?? bundleID
         )
     }
 }
