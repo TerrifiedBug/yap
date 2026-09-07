@@ -63,6 +63,18 @@ final class SettingsModel: ObservableObject {
     }
     @Published private(set) var excludedApps: [AppRow]
     @Published private(set) var routes: [AppRow]
+    /// What meeting detection has named since launch, newest first — the
+    /// route list's `+` offers these beside the application picker, because
+    /// a daemon like avconferenced has no .app for the picker to find. A
+    /// snapshot at open, like everything else here; in memory only, so the
+    /// list starts empty at each launch.
+    let seenClients: [MeetingApp]
+    private static var seen: [MeetingApp] = []
+
+    static func noteSeen(_ app: MeetingApp) {
+        seen.removeAll { $0.bundleID == app.bundleID }
+        seen.insert(app, at: 0)
+    }
 
     /// Suppresses the write-through while `init` fills the properties in.
     private var loading = true
@@ -91,6 +103,7 @@ final class SettingsModel: ObservableObject {
         meetingAutoRecord = Config.meetingAutoRecord()
         excludedApps = Config.meetingExcludedApps().map { Self.resolve($0, detail: nil) }
         routes = Self.sorted(Config.recordingRoutes().map { Self.resolve($0.key, detail: $0.value) })
+        seenClients = Self.seen
         loading = false
         updateObserver = Updater.shared.observe { [weak self] state in
             self?.updateStatus = state.description
@@ -128,6 +141,12 @@ final class SettingsModel: ObservableObject {
         guard let bundleID = pickApp(prompt: "Route") else { return }
         guard let folder = pickFolder() else { return }
         setRoute(bundleID, folder: Self.abbreviated(folder))
+    }
+
+    /// A client detection has already named: no app picker, only the folder.
+    func addRoute(for app: MeetingApp) {
+        guard let folder = pickFolder() else { return }
+        setRoute(app.bundleID, folder: Self.abbreviated(folder))
     }
 
     func changeRouteFolder(_ bundleID: String) {

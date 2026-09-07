@@ -683,6 +683,9 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 detector?.ignoreCurrentClient()
                 return
             }
+            // A daemon like avconferenced has no .app for the Settings picker
+            // to find, so the route list offers what detection has named.
+            if let app { SettingsModel.noteSeen(app) }
 
             let title = MeetingTitle.capture(forCapturePID: pid)
             let who = app?.name ?? "Your microphone"

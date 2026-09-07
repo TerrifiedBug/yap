@@ -167,7 +167,10 @@ listed. If a route's folder cannot be created (an unmounted volume, say), the
 session falls back to `recordings_dir` and yap logs a warning naming the route.
 Manage the list under Recordings in the Settings window: + picks the app and
 then its folder, − removes the selected route, and double-clicking a row
-changes its folder.
+changes its folder. What holds the microphone is not always an app you could
+pick — a FaceTime call belongs to `avconferenced`, which has no app to find —
+so once detection has named something since yap started, + offers it beside
+"Choose Application…" and only asks for the folder.
 
 `mic_voice_processing` cancels speaker echo on the mic track. On by default: a
 call coming out of your speakers goes back into the mic. Without it, the other

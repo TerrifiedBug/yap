@@ -101,12 +101,19 @@ struct RecordingPane: View {
                         model.removeRoute(routeSelection)
                         self.routeSelection = nil
                     },
+                    // Named by detection since launch: the only way to route
+                    // a daemon, which has no .app for the picker to find.
+                    addChoices: model.seenClients.map { app in
+                        AppList.AddChoice(id: app.bundleID, label: app.name) {
+                            model.addRoute(for: app)
+                        }
+                    },
                     onActivate: { model.changeRouteFolder($0) }
                 )
             } header: {
                 Text("Route by app")
             } footer: {
-                Text("Calls detected from these apps are saved here instead of the folder above. Double-click a row to change its folder.")
+                Text("Calls detected from these apps are saved here instead of the folder above. Double-click a row to change its folder. Anything detection has named since yap started is listed under +, so a background process with no app can be routed too.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -186,8 +193,17 @@ private struct AppList: View {
     let removeHelp: String
     let onAdd: () -> Void
     let onRemove: () -> Void
+    /// Entries offered beside the picker. Any at all turn `+` into a menu,
+    /// with the picker first; none leaves it the plain button.
+    var addChoices: [AddChoice] = []
     /// Double-click on a row, for lists where a row has something to edit.
     var onActivate: ((String) -> Void)? = nil
+
+    struct AddChoice: Identifiable {
+        let id: String
+        let label: String
+        let action: () -> Void
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -217,7 +233,23 @@ private struct AppList: View {
 
             Divider()
             HStack(spacing: 0) {
-                stepper("plus", help: addHelp, action: onAdd)
+                if addChoices.isEmpty {
+                    stepper("plus", help: addHelp, action: onAdd)
+                } else {
+                    Menu {
+                        Button("Choose Application…", action: onAdd)
+                        Divider()
+                        ForEach(addChoices) { choice in
+                            Button(choice.label, action: choice.action)
+                        }
+                    } label: {
+                        symbol("plus")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help(addHelp)
+                }
                 Divider().frame(height: 16)
                 stepper("minus", help: removeHelp, action: onRemove)
                     .disabled(selection == nil)
@@ -290,14 +322,16 @@ private struct AppList: View {
     private func stepper(
         _ symbol: String, help: String, action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 30, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .help(help)
+        Button(action: action) { self.symbol(symbol) }
+            .buttonStyle(.borderless)
+            .help(help)
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 11, weight: .semibold))
+            .frame(width: 30, height: 24)
+            .contentShape(Rectangle())
     }
 }
 
