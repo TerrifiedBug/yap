@@ -12,7 +12,7 @@ struct Yap: ParsableCommand {
         // The single source of truth for what this binary is. Nothing else
         // holds a version constant, and the release workflow greps this
         // literal against the tag, so a build can never claim the wrong one.
-        version: "0.3.0",
+        version: "0.3.1",
         // Two subcommands, and that is the product: `run` is the app, `bench`
         // is the only thing a terminal can do that the menu bar cannot.
         // Everything else — setup, permissions, the login item, the model,
