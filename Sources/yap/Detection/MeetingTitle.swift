@@ -2,11 +2,24 @@ import AppKit
 import ApplicationServices
 import Darwin
 
-/// Best-effort meeting titles from the window-owning app behind a capture pid.
+/// Who is on the microphone: an identity stable enough to keep in the
+/// exclusion list, and a name to put in front of the user.
+struct MeetingApp {
+    /// Bundle id of the outermost app bundle behind the capture client, or the
+    /// identifier Core Audio attributes the stream to when there is no bundle.
+    let bundleID: String
+    /// What to call it on screen.
+    let name: String
+}
+
+/// Who is on the microphone and what their meeting is called: an identity for
+/// the capture pid, and a best-effort title from the window-owning app behind
+/// it.
 ///
 /// Cost contract: call only when prompting, accepting, or resuming after a
-/// quiet gap — never from the detector poll loop or dictation path. Each call
-/// makes a handful of AX round-trips bounded by a 0.25 second timeout.
+/// quiet gap — never from the detector poll loop or dictation path. The title
+/// lookups each make a handful of AX round-trips bounded by a 0.25 second
+/// timeout.
 @MainActor
 enum MeetingTitle {
     /// Path to the outermost app bundle holding the pid's executable.
@@ -20,19 +33,56 @@ enum MeetingTitle {
         guard let path = String(bytes: buffer[..<Int(length)], encoding: .utf8) else {
             return nil
         }
+        return outermostAppBundle(in: path)
+    }
+
+    /// Identify the app behind a capture pid, for the prompt's name and the
+    /// exclusion list's key. Two routes to the same answer — the outermost
+    /// `.app` bundle around the client — because either one can come up empty.
+    ///
+    /// The executable path is free and usually enough, but it fails in both
+    /// directions: `proc_pidpath` returns nothing at all for a process whose
+    /// binary was replaced under it (measured on a self-updating app whose
+    /// helper held the mic), and a daemon like macOS's own `corespeechd` has
+    /// no `.app` around it to find.
+    ///
+    /// Core Audio answers where the path doesn't. It attributes every input
+    /// stream to a bundle id of its own — helpers and system daemons
+    /// included — and the read costs 0.02 ms. Empty only for a bare
+    /// executable, which genuinely has no identity worth storing: that is the
+    /// one case left with no name and no Ignore button.
+    static func app(forPID pid: pid_t, audioBundleID: String?) -> MeetingApp? {
+        if let app = identify(bundleAt: appBundlePath(forPID: pid)) { return app }
+        guard let audioBundleID, !audioBundleID.isEmpty else { return nil }
+        // Resolved through the installed copy and collapsed onto its container,
+        // so a helper reads as "Google Chrome" rather than "Google Chrome
+        // Helper": one Ignore then covers every helper the app starts, under
+        // the same id Settings' app picker would have stored.
+        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: audioBundleID)
+        if let app = identify(bundleAt: installed.flatMap { outermostAppBundle(in: $0.path) }) {
+            return app
+        }
+        // A daemon: nothing installed to resolve and no name to look up, but
+        // the identifier is stable, so it can still be excluded. Its last
+        // component is the closest thing to a name it has.
+        return MeetingApp(
+            bundleID: audioBundleID,
+            name: audioBundleID.components(separatedBy: ".").last ?? audioBundleID
+        )
+    }
+
+    /// Bundle id and Finder name of an app bundle path, if it has both.
+    private static func identify(bundleAt path: String?) -> MeetingApp? {
+        guard let path, let bundleID = Bundle(path: path)?.bundleIdentifier else { return nil }
+        return MeetingApp(bundleID: bundleID, name: FileManager.default.displayName(atPath: path))
+    }
+
+    /// The first `.app` on a path — the one a human would recognise, so a
+    /// renderer buried in Chrome's Frameworks directory reads as Chrome.
+    private static func outermostAppBundle(in path: String) -> String? {
         let components = (path as NSString).pathComponents
         guard let end = components.firstIndex(where: { $0.hasSuffix(".app") }) else { return nil }
         return NSString.path(withComponents: Array(components[...end]))
-    }
-
-    /// Bundle identifier of the app behind a capture pid, for the exclusion
-    /// list. Reading Info.plist off the bundle path — no TCC, no AX, and it
-    /// works for sandboxed and hardened apps alike.
-    ///
-    /// A process with no `.app` around it has no identity we could store, so
-    /// it can never be excluded and never grows an Ignore button.
-    static func bundleID(forPID pid: pid_t) -> String? {
-        appBundlePath(forPID: pid).flatMap { Bundle(path: $0)?.bundleIdentifier }
     }
 
     /// Best-effort meeting name from the capturing app's windows.

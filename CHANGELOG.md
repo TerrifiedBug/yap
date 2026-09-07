@@ -7,6 +7,24 @@ section here does not ship.
 Releases before 0.3.0 are on the
 [Releases page](https://github.com/TerrifiedBug/yap/releases).
 
+## 0.3.1
+
+Meeting detection now names what has your microphone, and ignoring something
+actually makes it go away.
+
+- The prompt and the recording banner name the client in the two cases where
+  they used to say nothing at all. A helper process counts as the app that
+  owns it, so one "Ignore" covers every helper Chrome or Teams starts. A
+  background process counts as itself, so the speech service macOS keeps
+  listening with when "Hey Siri" is on shows up as `CoreSpeech` and can be
+  ignored like an app. Before, either of those produced a bare "Recording
+  meeting" pill with no Ignore button on it — nothing to click, and no way to
+  stop it happening again short of turning detection off.
+- An ignored app is now genuinely out of the picture. It used to stay the
+  client yap was following, which hid everything else behind it: once you had
+  ignored a process that holds the microphone for hours, no real call could be
+  detected until it let go.
+
 ## 0.3.0
 
 yap is an app now. Everything that used to need a terminal happens in the menu
