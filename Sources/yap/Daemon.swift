@@ -615,9 +615,18 @@ final class Daemon: NSObject, NSApplicationDelegate {
             }
             newSession.title = title
             newSession.appBundleID = app?.bundleID
-            try newSession.start()
+            // Read here, not at launch: a toggle in Settings applies to the
+            // next call. The live transcript borrows the daemon's warm model
+            // the same way the post-stop pass does.
+            let live = Config.liveTranscript()
+                ? LiveTranscript(transcriber: transcriber, dir: newSession.dir, startedAt: newSession.startedAt)
+                : nil
+            try newSession.start(live: live)
             session = newSession
             autoStarted = auto
+            if let cmd = Config.onStart() {
+                Hook.run(cmd, dir: newSession.dir) { warn("on_start \($0)") }
+            }
             if !auto {
                 // Started from the menu, so any prompt on screen is offering
                 // something we're already doing — and the pause below would

@@ -231,14 +231,7 @@ actor TranscriptionCoordinator {
     /// recording when transcription is disabled).
     private func runHook(for dir: URL) {
         guard let cmd = Config.onStop() else { return }
-        let task = Process()
-        task.launchPath = "/bin/sh"
-        task.arguments = ["-c", "\(cmd) \"$0\"", dir.path]
-        do {
-            try task.run()
-        } catch {
-            log(dir, "on_stop hook failed to launch: \(error)")
-        }
+        Hook.run(cmd, dir: dir) { log(dir, "on_stop \($0)") }
     }
 
     private func log(_ dir: URL, _ message: String) {

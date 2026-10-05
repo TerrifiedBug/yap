@@ -93,8 +93,10 @@ what this yap can do. Your own values are never touched.
   "meeting_auto_record": false,
   "meeting_excluded_apps": [],
   "mic_voice_processing": true,
+  "on_start": "my-hook",
   "on_stop": "my-hook",
   "transcription": { "enabled": true },
+  "live_transcript": false,
   "dictation": {
     "model": "parakeet-tdt-ctc-110m",
     "hotkey": "fn",
@@ -108,8 +110,8 @@ what this yap can do. Your own values are never touched.
 
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 `mute_output`, `newline_after_release`, `meeting_detection`,
-`meeting_auto_record`, `meeting_excluded_apps`, `recordings_dir` and
-`recording_routes` all change on the spot. A new `model` wants a restart, and
+`meeting_auto_record`, `meeting_excluded_apps`, `recordings_dir`,
+`recording_routes` and `live_transcript` all change on the spot. A new `model` wants a restart, and
 yap says so when it sees one.
 
 `hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
@@ -177,8 +179,19 @@ call coming out of your speakers goes back into the mic. Without it, the other
 side gets transcribed twice, the second time as you. If some audio route
 returns silence instead, yap notices inside a second and restarts the mic raw.
 
-`on_stop` runs a command after each recording with the session folder as its
-argument.
+`on_start` runs a command the moment a recording is under way, and `on_stop`
+runs one after each recording. Both get the session folder as their argument.
+
+`live_transcript` writes the transcript while the recording is still going.
+Off by default. On, the session folder gains `live.jsonl`, one JSON object per
+line — `speaker`, `start_ms`, `end_ms`, `text` — appended a few seconds at a
+time as each of you stops talking, or every ten seconds for someone who does
+not. It is the same model dictation uses, so nothing extra is loaded; what it
+costs is one short inference every few seconds for the length of the call,
+and a dictation press during a meeting may wait behind one. The transcript
+written at the end is unchanged and still the one to keep: `live.jsonl` has
+no word timings and breaks where the audio was quietest, not where the
+sentence ended. Pair it with `on_start` and something can read along.
 
 `transcription` is automatic transcription of recordings, on by default.
 Dictation ignores it, since the hotkey always transcribes. When one finishes

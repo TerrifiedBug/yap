@@ -49,13 +49,15 @@ final class SettingsModel: ObservableObject {
     @Published var transcriptionEnabled: Bool {
         didSet { writeTranscription("enabled", transcriptionEnabled) }
     }
+    @Published var liveTranscript: Bool { didSet { write("live_transcript", liveTranscript) } }
     @Published var micVoiceProcessing: Bool {
         didSet { write("mic_voice_processing", micVoiceProcessing) }
     }
     /// Debounced, unlike every other control: a keystroke is not a decision,
     /// and writing per character would rewrite the file — and wake the
     /// watcher — a dozen times while someone types a command.
-    @Published var onStop: String { didSet { scheduleOnStopWrite() } }
+    @Published var onStart: String { didSet { scheduleHookWrite("on_start", onStart) } }
+    @Published var onStop: String { didSet { scheduleHookWrite("on_stop", onStop) } }
 
     @Published var meetingDetection: Bool { didSet { write("meeting_detection", meetingDetection) } }
     @Published var meetingAutoRecord: Bool {
@@ -78,7 +80,7 @@ final class SettingsModel: ObservableObject {
 
     /// Suppresses the write-through while `init` fills the properties in.
     private var loading = true
-    private var onStopWrite: Task<Void, Never>?
+    private var hookWrites: [String: Task<Void, Never>] = [:]
     /// Set while `applyLaunchAtLogin` puts the toggle back after a failure,
     /// so the reassignment does not re-enter the setter.
     private var applyingLaunchAtLogin = false
@@ -97,7 +99,9 @@ final class SettingsModel: ObservableObject {
             ?? ModelRegistry.recommended()?.id ?? ""
         recordingsDir = Self.abbreviated(Config.recordingsDir() ?? Config.defaultRoot)
         transcriptionEnabled = Config.transcriptionEnabled()
+        liveTranscript = Config.liveTranscript()
         micVoiceProcessing = Config.micVoiceProcessing()
+        onStart = Config.onStart() ?? ""
         onStop = Config.onStop() ?? ""
         meetingDetection = Config.meetingDetectionEnabled()
         meetingAutoRecord = Config.meetingAutoRecord()
@@ -276,16 +280,16 @@ final class SettingsModel: ObservableObject {
         write("recording_routes", Dictionary(uniqueKeysWithValues: routes.map { ($0.id, $0.detail) }))
     }
 
-    private func scheduleOnStopWrite() {
+    private func scheduleHookWrite(_ key: String, _ text: String) {
         guard !loading else { return }
-        onStopWrite?.cancel()
-        let command = onStop.trimmingCharacters(in: .whitespacesAndNewlines)
-        onStopWrite = Task { @MainActor [weak self] in
+        hookWrites[key]?.cancel()
+        let command = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        hookWrites[key] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }
             // An empty hook is no hook: drop the key rather than leave an
             // empty string for `Config.onStop()` to filter out forever.
-            self?.write("on_stop", command.isEmpty ? nil : command)
+            self?.write(key, command.isEmpty ? nil : command)
         }
     }
 
