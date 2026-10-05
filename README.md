@@ -97,6 +97,7 @@ what this yap can do. Your own values are never touched.
   "on_stop": "my-hook",
   "transcription": { "enabled": true },
   "live_transcript": false,
+  "diarize": false,
   "dictation": {
     "model": "parakeet-tdt-ctc-110m",
     "hotkey": "fn",
@@ -111,7 +112,7 @@ what this yap can do. Your own values are never touched.
 Save it and yap picks it up. The hotkey, `tap_to_toggle`, the overlay,
 `mute_output`, `newline_after_release`, `meeting_detection`,
 `meeting_auto_record`, `meeting_excluded_apps`, `recordings_dir`,
-`recording_routes` and `live_transcript` all change on the spot. A new `model` wants a restart, and
+`recording_routes`, `live_transcript` and `diarize` all change on the spot. A new `model` wants a restart, and
 yap says so when it sees one.
 
 `hotkey` is a modifier held on its own — `fn`, `rightOption`, `rightCommand`,
@@ -192,6 +193,22 @@ and a dictation press during a meeting may wait behind one. The transcript
 written at the end is unchanged and still the one to keep: `live.jsonl` has
 no word timings and breaks where the audio was quietest, not where the
 sentence ended. Pair it with `on_start` and something can read along.
+
+`diarize` tells the other speakers apart. Off by default. On, the pass that
+transcribes a recording also runs the system track through a speaker
+diarizer, and each line that was `them` becomes `them-1`, `them-2` and so on,
+numbered by who spoke first. Your own track is still `me`; the live transcript
+is still plain `them`. The first time it fetches a 50 MB model into the shared
+FluidAudio cache, and a long call takes a little longer to come back.
+
+Every voice it hears is remembered in `~/.config/yap/voices.json` by its
+print, so the same person is the same voice from one meeting to the next.
+Settings → Recordings → Voices lists them; double-click one to name it, and
+from the next transcript on its lines carry the name instead of `them-N`. An
+unnamed voice is identified in the transcript's `speakers:` line by id, which
+is how you tell which `them-2` to name. `−` forgets a voice. Nothing about a
+voice leaves the Mac: the print is a few hundred numbers in that file and the
+diarizer runs on-device like everything else.
 
 `transcription` is automatic transcription of recordings, on by default.
 Dictation ignores it, since the hotkey always transcribes. When one finishes

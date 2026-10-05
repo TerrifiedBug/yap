@@ -74,6 +74,7 @@ struct DictationPane: View {
 struct RecordingPane: View {
     @ObservedObject var model: SettingsModel
     @State private var routeSelection: String?
+    @State private var voiceSelection: String?
 
     var body: some View {
         Form {
@@ -120,9 +121,33 @@ struct RecordingPane: View {
             Section {
                 Toggle("Transcribe recordings automatically", isOn: $model.transcriptionEnabled)
                 Toggle("Transcribe while recording", isOn: $model.liveTranscript)
+                Toggle("Tell the other speakers apart", isOn: $model.diarize)
                 Toggle("Voice processing on the mic", isOn: $model.micVoiceProcessing)
             } footer: {
-                Text("While recording writes live.jsonl in the session folder a few seconds at a time, for anything reading along. The transcript written at the end is unchanged.")
+                Text("While recording writes live.jsonl in the session folder a few seconds at a time, for anything reading along. Telling speakers apart labels the other side of a call them-1, them-2 and so on once it is transcribed, and remembers each voice below; the first time it fetches a 50 MB model.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                AppList(
+                    apps: model.voices,
+                    selection: $voiceSelection,
+                    emptyText: "Voices yap has heard on the other side of a call appear here once speakers are told apart.",
+                    addHelp: "",
+                    removeHelp: "Forget the selected voice",
+                    onAdd: {},
+                    onRemove: {
+                        guard let voiceSelection else { return }
+                        model.forgetVoice(voiceSelection)
+                        self.voiceSelection = nil
+                    },
+                    onActivate: { model.nameVoice($0) },
+                    canAdd: false
+                )
+            } header: {
+                Text("Voices")
+            } footer: {
+                Text("Double-click a voice to name it: from the next transcript on, its lines carry the name instead of them-N. A transcript names the unnamed ones by id, so you can tell which is which.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -208,6 +233,9 @@ private struct AppList: View {
     var addChoices: [AddChoice] = []
     /// Double-click on a row, for lists where a row has something to edit.
     var onActivate: ((String) -> Void)? = nil
+    /// A list nothing can be added to by hand (voices arrive by being heard)
+    /// loses its `+`; the `−` stays.
+    var canAdd: Bool = true
 
     struct AddChoice: Identifiable {
         let id: String
@@ -243,7 +271,9 @@ private struct AppList: View {
 
             Divider()
             HStack(spacing: 0) {
-                if addChoices.isEmpty {
+                if !canAdd {
+                    EmptyView()
+                } else if addChoices.isEmpty {
                     stepper("plus", help: addHelp, action: onAdd)
                 } else {
                     Menu {
@@ -260,7 +290,7 @@ private struct AppList: View {
                     .fixedSize()
                     .help(addHelp)
                 }
-                Divider().frame(height: 16)
+                if canAdd { Divider().frame(height: 16) }
                 stepper("minus", help: removeHelp, action: onRemove)
                     .disabled(selection == nil)
                 Spacer(minLength: 0)
@@ -321,6 +351,11 @@ private struct AppList: View {
     private func icon(_ app: SettingsModel.AppRow) -> some View {
         if let image = app.icon {
             Image(nsImage: image).resizable()
+        } else if let symbol = app.symbol {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(selection == app.id ? AnyShapeStyle(.white.opacity(0.9))
+                    : AnyShapeStyle(.secondary))
         } else {
             Image(systemName: "questionmark.app.dashed")
                 .font(.system(size: 15))

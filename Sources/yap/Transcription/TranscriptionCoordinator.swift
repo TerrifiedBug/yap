@@ -195,14 +195,78 @@ actor TranscriptionCoordinator {
 
         merged.sort { $0.start_ms < $1.start_ms }
 
+        var speakers: [String: Transcript.SpeakerInfo]?
+        if Config.diarize(), let them = meta.tracks.first(where: { $0.speaker == "them" }),
+           merged.contains(where: { $0.speaker == "them" }) {
+            // Best effort, after the transcript exists in memory: a diarizer
+            // that fails (no network for the first download, a track too short
+            // to cluster) costs the labels, never the transcript.
+            do {
+                log(dir, "diarizing \(them.file)")
+                let result = try await Diarizer.run(dir.appendingPathComponent(them.file))
+                let labelled = label(merged, with: result, offsetMs: them.offsetMs,
+                                     session: dir.lastPathComponent)
+                merged = labelled.segments
+                speakers = labelled.speakers
+                log(dir, "diarized — \(labelled.speakers.count) other voice(s)")
+            } catch {
+                log(dir, "diarization skipped: \(error)")
+            }
+        }
+
         let transcript = Transcript(
             engine: transcriber.engineName,
             model: transcriber.modelID,
             created_at: iso.string(from: Date()),
-            segments: merged
+            segments: merged,
+            speakers: speakers
         )
         try transcript.write(to: dir)
         log(dir, "done — \(merged.count) segments")
+    }
+
+    /// Speech a voice needs before its print is kept in voices.json.
+    static let minVoiceSeconds: TimeInterval = 8
+
+    /// Give every "them" segment the voice that spoke most of it. Clusters are
+    /// numbered by first appearance; a voice known from voices.json keeps its
+    /// name. A segment the diarizer has no span for stays "them".
+    private func label(
+        _ segments: [Transcript.Segment], with result: Diarizer.Result,
+        offsetMs: Int, session: String
+    ) -> (segments: [Transcript.Segment], speakers: [String: Transcript.SpeakerInfo]) {
+        // A voice that spoke for a few seconds — a join chime, a "hello" from
+        // someone who left, a stray bit of playback — still gets its them-N,
+        // but its print is too thin to remember: it would match nobody next
+        // time and sit in voices.json for ever.
+        var speech: [String: TimeInterval] = [:]
+        for span in result.spans { speech[span.cluster, default: 0] += span.end - span.start }
+        let worthKeeping = result.centroids.filter { speech[$0.key, default: 0] >= Self.minVoiceSeconds }
+        let (voices, byCluster) = Voices.resolve(
+            centroids: worthKeeping, session: session, in: Voices.load())
+        if !worthKeeping.isEmpty { Voices.save(voices) }
+        var labelOf: [String: String] = [:]
+        var speakers: [String: Transcript.SpeakerInfo] = [:]
+        for (i, cluster) in SpeakerLabeler.order(result.spans).enumerated() {
+            let fallback = "them-\(i + 1)"
+            let voice = byCluster[cluster]
+            let label = voice?.label(fallback: fallback) ?? fallback
+            labelOf[cluster] = label
+            speakers[label] = Transcript.SpeakerInfo(
+                voice: voice?.id, name: voice?.name, order: i + 1)
+        }
+        let offset = TimeInterval(offsetMs) / 1000
+        let out = segments.map { seg -> Transcript.Segment in
+            guard seg.speaker == "them" else { return seg }
+            let start = TimeInterval(seg.start_ms) / 1000 - offset
+            let end = TimeInterval(seg.end_ms) / 1000 - offset
+            guard let cluster = SpeakerLabeler.cluster(covering: start, end, in: result.spans),
+                  let label = labelOf[cluster]
+            else { return seg }
+            return Transcript.Segment(speaker: label, start_ms: seg.start_ms, end_ms: seg.end_ms,
+                                      text: seg.text)
+        }
+        return (out, speakers)
     }
 
     /// `warmUp()` is idempotent, so a borrowed transcriber the daemon already
@@ -321,10 +385,20 @@ private struct Transcript: Codable {
         let text: String
     }
 
+    /// One entry per other voice the diarizer found, keyed by the label used
+    /// in `segments`: `them-N`, or the name from voices.json.
+    struct SpeakerInfo: Codable {
+        let voice: String?
+        let name: String?
+        let order: Int
+    }
+
     let engine: String
     let model: String
     let created_at: String
     let segments: [Segment]
+    /// Absent when diarization was off or found nothing to label.
+    let speakers: [String: SpeakerInfo]?
 
     /// Render transcript.md, then write transcript.json.
     ///
@@ -344,7 +418,18 @@ private struct Transcript: Codable {
     }
 
     private func rendered(title: String) -> String {
-        var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
+        var lines = ["# \(title)", "", "engine: \(engine) (\(model))"]
+        if let speakers, !speakers.isEmpty {
+            // Who is who, so a reader of the markdown alone can name a voice:
+            // `them-2 = voice 3f2a9c1d (unnamed)` is the id to look for in
+            // Settings → Recordings → Voices.
+            let parts = speakers.sorted { $0.value.order < $1.value.order }.map { label, info in
+                guard let voice = info.voice else { return "\(label) (brief, not kept)" }
+                return info.name != nil ? "\(label) (voice \(voice))" : "\(label) = voice \(voice) (unnamed)"
+            }
+            lines.append("speakers: " + parts.joined(separator: " · "))
+        }
+        lines.append("")
         for seg in segments {
             lines.append(
                 "**[\(formatElapsed(Double(seg.start_ms) / 1000))] \(seg.speaker):** \(seg.text)")
