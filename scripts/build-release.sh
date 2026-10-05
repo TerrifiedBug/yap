@@ -25,7 +25,11 @@ VERSION="${VERSION:-0.1.0}"
 APP_IDENTITY="${APP_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
-BUILD_BIN="$ROOT/.build/arm64-apple-macosx/release/yap"
+# Asked, not assumed: SwiftPM puts the product under
+# .build/arm64-apple-macosx/release on one toolchain and .build/out/Products/
+# Release on another, and a hardcoded path shipped a stale binary from the
+# other layout without a word.
+BUILD_BIN="$(swift build -c release --arch arm64 --show-bin-path)/yap"
 ENTITLEMENTS="$ROOT/packaging/yap.entitlements"
 PLIST_TEMPLATE="$ROOT/packaging/Info.plist"
 ICON="$ROOT/packaging/yap.icns"
