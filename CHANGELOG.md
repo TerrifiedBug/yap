@@ -7,6 +7,20 @@ section here does not ship.
 Releases before 0.3.0 are on the
 [Releases page](https://github.com/TerrifiedBug/yap/releases).
 
+## 0.4.0
+
+The transcript can be read while the meeting is still going.
+
+- `live_transcript`, off by default and a toggle under Recordings in Settings,
+  writes `live.jsonl` in the session folder as the recording runs: one line
+  per chunk, cut when a speaker pauses or every ten seconds. It uses the same
+  loaded model as everything else, so memory is unchanged; the cost is one
+  short inference every few seconds while a call is on. The transcript
+  written at the end is exactly what it was.
+- `on_start` runs a command when a recording begins, the way `on_stop` has
+  always run one when it ends. Both are in Settings now, and both get the
+  session folder as their argument.
+
 ## 0.3.1
 
 Meeting detection now names what has your microphone, and ignoring something

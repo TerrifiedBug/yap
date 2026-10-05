@@ -119,16 +119,26 @@ struct RecordingPane: View {
             }
             Section {
                 Toggle("Transcribe recordings automatically", isOn: $model.transcriptionEnabled)
+                Toggle("Transcribe while recording", isOn: $model.liveTranscript)
                 Toggle("Voice processing on the mic", isOn: $model.micVoiceProcessing)
+            } footer: {
+                Text("While recording writes live.jsonl in the session folder a few seconds at a time, for anything reading along. The transcript written at the end is unchanged.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
             Section {
+                LabeledContent("Run when a recording starts") {
+                    TextField("shell command", text: $model.onStart)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                }
                 LabeledContent("Run after each recording") {
                     TextField("shell command", text: $model.onStop)
                         .font(.system(size: 12, design: .monospaced))
                         .textFieldStyle(.roundedBorder)
                 }
             } footer: {
-                Text("Given the session folder as its argument.")
+                Text("Each is given the session folder as its argument. The first runs the moment both tracks are recording; the second once the transcript is written.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

@@ -6,10 +6,12 @@ import Foundation
 ///       "recordings_dir": "~/Recordings",
 ///       "recording_routes": { "us.zoom.xos": "~/Work" },
 ///       "transcription": { "enabled": true },
+///       "live_transcript": false,
 ///       "mic_voice_processing": true,
 ///       "meeting_detection": false,
 ///       "meeting_auto_record": false,
 ///       "meeting_excluded_apps": [],
+///       "on_start": "my-hook",
 ///       "on_stop": "my-hook",
 ///       "dictation": {
 ///         "model": "parakeet-tdt-ctc-110m",
@@ -21,8 +23,9 @@ import Foundation
 ///       }
 ///     }
 ///
-/// Every key is optional and CLI flags win over the file. `on_stop` is a shell
-/// command spawned with the session directory as its argument — after the
+/// Every key is optional and CLI flags win over the file. `on_start` and
+/// `on_stop` are shell commands spawned with the session directory as their
+/// argument — the first once both tracks are recording, the second after the
 /// transcript is written, or right after recording when transcription is off.
 enum Config {
     static let path = FileManager.default.homeDirectoryForCurrentUser
@@ -56,11 +59,25 @@ enum Config {
         return URL(fileURLWithPath: expanded, isDirectory: true, relativeTo: root).standardizedFileURL
     }
 
+    /// Shell command to spawn the moment a session is recording, or nil.
+    static func onStart() -> String? {
+        guard let cmd = load()?["on_start"] as? String, !cmd.isEmpty else { return nil }
+        return cmd
+    }
+
     /// Shell command to spawn after each session's transcript is written (or
     /// after recording, if transcription is disabled), or nil.
     static func onStop() -> String? {
         guard let cmd = load()?["on_stop"] as? String, !cmd.isEmpty else { return nil }
         return cmd
+    }
+
+    /// Whether a session also writes `live.jsonl` as it records, a chunk at
+    /// a time on the same loaded model. Default off: it is one more inference
+    /// every few seconds for the length of a call, and only something reading
+    /// the file as it grows has a use for it. Read at each session start.
+    static func liveTranscript() -> Bool {
+        load()?["live_transcript"] as? Bool ?? false
     }
 
     /// Whether finished recordings are transcribed automatically. Default on.
@@ -189,13 +206,15 @@ enum Config {
 
     /// Every value here is the built-in default, so writing this file changes
     /// nothing about how yap behaves — it exists so "Open Config File" has
-    /// something to open and the watcher has something to watch. `on_stop` is
-    /// left out deliberately: there is no sensible default hook.
+    /// something to open and the watcher has something to watch. `on_start`
+    /// and `on_stop` are left out deliberately: there is no sensible default
+    /// hook.
     static let template = """
         {
           "recordings_dir": "~/Recordings",
           "recording_routes": {},
           "transcription": { "enabled": true },
+          "live_transcript": false,
           "mic_voice_processing": true,
           "meeting_detection": false,
           "meeting_auto_record": false,

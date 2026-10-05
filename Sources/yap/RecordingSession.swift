@@ -15,6 +15,9 @@ final class RecordingSession {
 
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
+    /// Present only when `live_transcript` was on at start. Fed by both
+    /// recorders, finished after they stop.
+    private var live: LiveTranscript?
     private var stallTimer: Timer?
     /// Tracks already reported, so one stall warns once.
     private var warned: Set<String> = []
@@ -41,8 +44,13 @@ final class RecordingSession {
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
-    /// tap is torn down so we never run half a session silently.
-    func start(voiceProcessing: Bool = Config.micVoiceProcessing()) throws {
+    /// tap is torn down so we never run half a session silently. With `live`,
+    /// every buffer also feeds the live transcript, which starts ticking once
+    /// both tracks are up.
+    func start(voiceProcessing: Bool = Config.micVoiceProcessing(), live: LiveTranscript? = nil) throws {
+        self.live = live
+        mic.onSamples = live?.sink(for: "me")
+        system.onSamples = live?.sink(for: "them")
         try system.start(writingTo: dir.appendingPathComponent("system.caf"))
         do {
             try mic.start(
@@ -53,6 +61,7 @@ final class RecordingSession {
             system.stop()
             throw error
         }
+        live?.start()
         startStallWatch()
     }
 
@@ -105,6 +114,9 @@ final class RecordingSession {
         stallTimer = nil
         mic.stop()
         system.stop()
+        // After both recorders, so the last cut sees the last buffer.
+        live?.finish()
+        live = nil
 
         let ended = Date()
         let iso = ISO8601DateFormatter()
