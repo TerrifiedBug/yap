@@ -25,7 +25,7 @@ final class ConfigSerializerTests: XCTestCase {
         )
 
         let order = ["recordings_dir", "recording_routes", "transcription", "live_transcript",
-                     "mic_voice_processing",
+                     "diarize", "mic_voice_processing",
                      "meeting_detection", "meeting_auto_record", "meeting_excluded_apps",
                      "dictation"]
         let offsets = order.map { text.range(of: "\"\($0)\"")?.lowerBound }

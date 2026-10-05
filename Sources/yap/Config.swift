@@ -7,6 +7,7 @@ import Foundation
 ///       "recording_routes": { "us.zoom.xos": "~/Work" },
 ///       "transcription": { "enabled": true },
 ///       "live_transcript": false,
+///       "diarize": false,
 ///       "mic_voice_processing": true,
 ///       "meeting_detection": false,
 ///       "meeting_auto_record": false,
@@ -78,6 +79,14 @@ enum Config {
     /// the file as it grows has a use for it. Read at each session start.
     static func liveTranscript() -> Bool {
         load()?["live_transcript"] as? Bool ?? false
+    }
+
+    /// Whether the post-recording pass also tells the other speakers apart
+    /// (`them-1`, `them-2`, or their names from voices.json). Default off: a
+    /// one-off model download and a minute after a long call, for something a
+    /// dictation-only install never reads. Read when each session transcribes.
+    static func diarize() -> Bool {
+        load()?["diarize"] as? Bool ?? false
     }
 
     /// Whether finished recordings are transcribed automatically. Default on.
@@ -215,6 +224,7 @@ enum Config {
           "recording_routes": {},
           "transcription": { "enabled": true },
           "live_transcript": false,
+          "diarize": false,
           "mic_voice_processing": true,
           "meeting_detection": false,
           "meeting_auto_record": false,

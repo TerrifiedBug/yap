@@ -20,6 +20,12 @@ The transcript can be read while the meeting is still going.
 - `on_start` runs a command when a recording begins, the way `on_stop` has
   always run one when it ends. Both are in Settings now, and both get the
   session folder as their argument.
+- `diarize`, off by default and "Tell the other speakers apart" in Settings,
+  labels the other side of a call `them-1`, `them-2` and so on once it is
+  transcribed, and remembers each voice in `voices.json`. Name a voice under
+  Settings → Recordings → Voices and its lines carry the name from then on.
+  One-off 50 MB model download; the models load for the pass and are dropped
+  after it.
 
 ## 0.3.1
 

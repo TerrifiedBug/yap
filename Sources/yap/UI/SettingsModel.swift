@@ -25,6 +25,8 @@ final class SettingsModel: ObservableObject {
         /// The subtitle: the bundle id for an exclusion, the folder for a
         /// route — and for a route, exactly the string the config stores.
         let detail: String
+        /// A drawn stand-in for a row with no app icon: a voice.
+        var symbol: String? = nil
     }
 
     /// The login item, which is a file rather than a config key — so unlike
@@ -50,6 +52,9 @@ final class SettingsModel: ObservableObject {
         didSet { writeTranscription("enabled", transcriptionEnabled) }
     }
     @Published var liveTranscript: Bool { didSet { write("live_transcript", liveTranscript) } }
+    @Published var diarize: Bool { didSet { write("diarize", diarize) } }
+    /// The other voices yap has heard, from voices.json. Named ones first.
+    @Published private(set) var voices: [AppRow]
     @Published var micVoiceProcessing: Bool {
         didSet { write("mic_voice_processing", micVoiceProcessing) }
     }
@@ -100,6 +105,8 @@ final class SettingsModel: ObservableObject {
         recordingsDir = Self.abbreviated(Config.recordingsDir() ?? Config.defaultRoot)
         transcriptionEnabled = Config.transcriptionEnabled()
         liveTranscript = Config.liveTranscript()
+        diarize = Config.diarize()
+        voices = Self.voiceRows()
         micVoiceProcessing = Config.micVoiceProcessing()
         onStart = Config.onStart() ?? ""
         onStop = Config.onStop() ?? ""
@@ -193,6 +200,40 @@ final class SettingsModel: ObservableObject {
         // An app with no identifier in its Info.plist has nothing we could
         // store, and nothing to match a capture pid against later.
         return Bundle(url: url)?.bundleIdentifier
+    }
+
+    /// Double-click on a voice: name it, or clear the name to go back to
+    /// `them-N`. A transcript already written keeps its labels; the next one
+    /// uses the name.
+    func nameVoice(_ id: String) {
+        let current = Voices.load().first { $0.id == id }?.name ?? ""
+        askForName(title: "Name this voice", prefill: current) { [weak self] name in
+            Voices.rename(id, to: name)
+            self?.voices = Self.voiceRows()
+        }
+    }
+
+    func forgetVoice(_ id: String) {
+        Voices.forget(id)
+        voices = Self.voiceRows()
+    }
+
+    private static func voiceRows() -> [AppRow] {
+        let rows = Voices.load().map { voice -> AppRow in
+            let heard = String(voice.lastHeard.prefix(10))
+            let place = voice.lastSession.map { " · \($0)" } ?? ""
+            return AppRow(
+                id: voice.id,
+                name: voice.name ?? "Unnamed voice \(voice.id)",
+                icon: nil,
+                installed: true,
+                detail: "\(voice.meetings) \(voice.meetings == 1 ? "meeting" : "meetings") · last \(heard)\(place)",
+                symbol: voice.name == nil ? "person.fill.questionmark" : "person.fill")
+        }
+        return rows.sorted {
+            ($0.symbol == "person.fill" ? 0 : 1, $0.name.lowercased())
+                < ($1.symbol == "person.fill" ? 0 : 1, $1.name.lowercased())
+        }
     }
 
     func openConfigFile() {
